@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f7fd" />
+    <meta name="description" content="{{description}}" />
+    <meta property="og:title" content="{{title}}" />
+    <meta property="og:description" content="{{description}}" />
+    <meta property="og:type" content="website" />
+    <title>{{title}}</title>
+    <link rel="icon" href="{{root}}assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="{{root}}style.css" />
+    <link rel="stylesheet" href="{{root}}contact.css" />
+    <link rel="stylesheet" href="{{root}}home-image.css" />
+    <script src="{{root}}assets/vendor/gsap.min.js" defer></script>
+    <script src="{{root}}assets/vendor/ScrollTrigger.min.js" defer></script>
+    <script
+      type="module"
+      src="{{root}}app.js"
+      data-site-root="{{root}}"
+    ></script>
+  </head>
+  <body data-initial-project="{{initialProject}}">
+    <a class="skip" href="#works">跳转到作品</a>
+    <main id="main">{{content}}</main>
+    <button
+      id="back-top"
+      class="back-top"
+      type="button"
+      aria-label="回到顶部"
+      hidden
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M12 20V4M5 11l7-7 7 7" />
+      </svg>
+    </button>
+    <dialog
+      id="project-modal"
+      class="project-modal"
+      aria-labelledby="project-modal-title"
+    >
+      <span id="project-modal-title" class="sr-only">作品详情</span>
+      <button
+        id="project-close"
+        class="project-close"
+        type="button"
+        aria-label="关闭作品"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          aria-hidden="true"
+        >
+          <path d="m6 6 12 12M18 6 6 18" />
+        </svg>
+      </button>
+      <div id="project-modal-scroll" class="project-modal-scroll">
+        <div id="project-sheet" class="project-sheet" aria-busy="false"></div>
+      </div>
+    </dialog>
+    <dialog
+      id="viewer"
+      class="image-viewer"
+      aria-labelledby="viewer-label"
+      aria-describedby="viewer-hint"
+    >
+      <span id="viewer-label" class="sr-only">作品大图浏览</span>
+      <button
+        id="viewer-close"
+        class="viewer-close"
+        type="button"
+        aria-label="关闭大图"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          aria-hidden="true"
+        >
+          <path d="m6 6 12 12M18 6 6 18" />
+        </svg>
+      </button>
+      <div class="viewer-canvas" id="viewer-canvas">
+        <img id="viewer-img" alt="" draggable="false" />
+      </div>
+      <p id="viewer-hint" class="viewer-hint">
+        滚轮缩放 · 拖动查看 · 方向键切换 · 点击空白关闭
+      </p>
+    </dialog>
+  </body>
+</html>

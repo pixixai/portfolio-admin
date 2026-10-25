@@ -1,0 +1,27 @@
+{
+  "title": "噼哩画啦 · 作品集",
+  "owner": "噼哩画啦",
+  "year": "2026",
+  "description": "噼哩画啦的作品集，展示品牌、包装、UI 与商业视觉设计。",
+  "contact": {
+    "bilibiliName": "噼哩画啦",
+    "emails": [
+      "844045853@qq.com",
+      "pixixai@qq.com"
+    ],
+    "wechat": "pixixai"
+  },
+  "categories": [
+    "品牌 / IP",
+    "包装设计",
+    "UI / UX",
+    "平面视觉",
+    "空间设计",
+    "电商视觉"
+  ],
+  "footer": {
+    "text": "© 2026 噼哩画啦 · 作品集",
+    "registrationText": "",
+    "registrationUrl": ""
+  }
+}

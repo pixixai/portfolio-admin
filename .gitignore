@@ -1,0 +1,13 @@
+node_modules/
+data/
+!data/.gitkeep
+renderer/dist/
+renderer/.preview/
+renderer/tmp/
+*.log
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

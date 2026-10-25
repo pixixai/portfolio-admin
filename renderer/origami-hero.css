@@ -1,0 +1,161 @@
+/* A contained CSS 3D glass accordion above the fully visible collection. */
+html { scroll-padding-top: 84px; }
+main { max-width: none; margin: 0; padding: 0; }
+.home-hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  min-height: min(800px, 88svh);
+  padding: clamp(22px, 3vw, 48px);
+  overflow: hidden;
+  background: #edf1fa;
+}
+.hero-atmosphere { position: absolute; z-index: -1; inset: 0; overflow: hidden; pointer-events: none; background: linear-gradient(135deg, #f2f6fb, #eaf0ff 58%, #eeecf9); }
+.hero-atmosphere > span { position: absolute; width: 70%; aspect-ratio: 1; border-radius: 50%; animation: glow-drift 24s ease-in-out infinite alternate paused; }
+.hero-atmosphere > span:nth-child(1) { left: -20%; bottom: -58%; background: radial-gradient(circle, #cbb2f5b3, #dbcbf759 40%, transparent 68%); }
+.hero-atmosphere > span:nth-child(2) { right: -22%; top: -60%; background: radial-gradient(circle, #b9b9ee99, #d4d9f340 40%, transparent 68%); animation-delay: -12s; }
+.hero-atmosphere > span:nth-child(3) { left: -28%; top: 4%; background: radial-gradient(circle, #bcebdc8c, #d1f1e433 40%, transparent 68%); animation-delay: -7s; }
+.is-ambient-active .hero-atmosphere > span { animation-play-state: running; }
+@keyframes glow-drift { from { transform: translate3d(-3%, 0, 0) scale(.95); } to { transform: translate3d(6%, -5%, 0) scale(1.08); } }
+.hero-shell {
+  position: relative;
+  isolation: isolate;
+  width: min(1440px, 100%);
+  min-height: clamp(500px, 68svh, 640px);
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  align-items: center;
+  gap: 16px;
+  padding: 36px clamp(30px, 5vw, 80px) 50px;
+  border: 1px solid #ffffffed;
+  border-radius: 36px;
+  background: linear-gradient(125deg, #ffffffbd, #f0f6ffb0 62%, #ebf2ffa8);
+  box-shadow: inset 0 1px 2px #fff, 0 18px 70px #798ac00a;
+}
+.hero-shell::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 36% 30% at 16% 3%, #b8eadc70, transparent 82%),
+    radial-gradient(ellipse 38% 28% at 27% 100%, #c7aff393, transparent 80%),
+    radial-gradient(ellipse 30% 30% at 3% 88%, #a8d3fc75, transparent 82%);
+}
+.origami-backdrop { position: absolute; z-index: 0; inset: 1px; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.origami-backdrop > span { position: absolute; opacity: .52; -webkit-mask-image: linear-gradient(135deg, #000 5%, #000c 40%, #0005 80%, #0002 100%); mask-image: linear-gradient(135deg, #000 5%, #000c 40%, #0005 80%, #0002 100%); animation: object-drift 19s ease-in-out infinite alternate paused; }
+.decor-orb { top: 18px; right: 20px; width: clamp(180px, 19vw, 270px); aspect-ratio: 1; border: 1px solid #ffffffc9; border-radius: 50%; background: radial-gradient(circle at 28% 22%, #ffffffed, #d4eeff8f 32%, #b5c5f66b 58%, #d8c9f34d 75%, #f4ffffb3); box-shadow: inset 6px 9px 18px #ffffffb8, inset -8px -12px 24px #879bd033, 0 20px 50px #9ab0d526; }
+.decor-ring { left: 53%; bottom: 24px; width: clamp(100px, 12vw, 175px); aspect-ratio: 1; border-radius: 50%; rotate: -28deg; scale: 1 .75; animation-delay: -7s; }
+.decor-ring::before { content: ""; position: absolute; inset: 0; border: 1px solid #ffffffd9; border-radius: inherit; background: conic-gradient(from 30deg, #ffffffdb, #bde9f966, #b7bdf18a, #f5ffffed, #c4defb66, #ffffffdb); -webkit-backdrop-filter: blur(8px) saturate(1.2); backdrop-filter: blur(8px) saturate(1.2); -webkit-mask-image: radial-gradient(circle, transparent 43%, #000 46%); mask-image: radial-gradient(circle, transparent 43%, #000 46%); box-shadow: inset 3px 4px 6px #fffffff0, inset -4px -6px 10px #8aa4d975; }
+.decor-ring::after { content: ""; position: absolute; inset: 18%; border: 1px solid #ffffffc9; border-radius: inherit; box-shadow: 2px 3px 5px #8da8cd70, -1px -2px 3px #ffffffe0; }
+.decor-tile { right: 28px; bottom: 12%; width: clamp(80px, 8vw, 120px); aspect-ratio: 1; border: 1px solid #ffffffed; border-radius: 20px; background: linear-gradient(135deg, #ffffffbd, #bce8ed40 45%, #c5b7f375); box-shadow: inset 2px 3px 5px #ffffffe6, inset -2px -3px 7px #c0b6e64d, 10px 18px 30px #8e9fcc21; rotate: 24deg; animation-delay: -13s; }
+.is-ambient-active .origami-backdrop > span { animation-play-state: running; }
+@keyframes object-drift { from { transform: translate3d(0, 5px, 0); } to { transform: translate3d(-8px, -10px, 0); } }
+.home-intro { position: relative; z-index: 1; min-width: 0; }
+.home-brand { display: inline-flex; align-items: center; margin: 0 0 24px; padding: 7px 16px; border: 1px solid #ffffffe0; border-radius: 999px; background: linear-gradient(135deg, #ffffffa6, #e5efff4d); box-shadow: inset 0 1px 1px #fff, 0 4px 15px #7b95c30d; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: #586e9e; font-size: 14px; font-weight: 600; line-height: 1.4; letter-spacing: 1.5px; }
+.home-identity { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 7px 0 0; font-size: inherit; line-height: inherit; font-weight: inherit; color: inherit; }
+.home-identity span + span { display: inline-flex; align-items: center; gap: 12px; }
+.home-identity span + span::before { content: ""; display: block; flex: 0 0 1px; height: 1em; background: #bdc9e0; }
+.home-intro h1 { position: relative; width: fit-content; margin: 0; font: 900 clamp(40px, 4.8vw, 76px)/1.18 var(--font-sans); letter-spacing: -.035em; -webkit-text-stroke: .45px currentColor; color: #28325f; }
+.home-intro h1 > span { display: block; }
+.home-intro h1::after { content: ""; position: absolute; opacity: .48; width: clamp(20px, 1.9vw, 28px); height: clamp(20px, 1.9vw, 28px); top: 1px; right: calc(-1 * clamp(28px, 2.6vw, 38px)); border: 1px solid #ffffff80; border-radius: 50%; background: radial-gradient(circle at 28% 22%, #efffff, #72d6fa 42%, #7690ee 78%, #bdc8f9); box-shadow: inset 0 2px 3px #ffffffb8, inset -1px -2px 4px #557ad633, 0 5px 16px #8cc3f345; }
+.home-description { margin: 26px 0 0; color: #7d8aaa; font-size: clamp(12px, 1.15vw, 16px); line-height: 1.9; }
+.home-tagline { margin: 0; }
+.home-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 30px; }
+.home-actions a { display: inline-flex; align-items: center; justify-content: center; gap: 12px; padding: 11px 22px; min-height: 43px; border-radius: 999px; font-size: 12px; font-weight: 500; transition: background .2s, box-shadow .2s; }
+.home-primary { background: #4385f5; color: #fff; box-shadow: inset 0 1px 0 #ffffff45, 0 5px 16px #4385f526; }
+.home-primary:hover { background: #3175e8; box-shadow: 0 6px 22px #4385f540; }
+.home-contact-link { background: #ffffffb8; color: #4a78c0; border: 1px solid #fff; box-shadow: inset 0 -1px 2px #becfe52e; }
+.home-contact-link:hover { background: #fff; }
+.home-actions svg, .hero-scroll svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.origami-scene { position: relative; z-index: 1; min-width: 0; height: clamp(340px, 33vw, 460px); }
+.paper-aura { position: absolute; inset: -15% -12%; pointer-events: none; border-radius: 50%; background: radial-gradient(ellipse at 45% 40%, #b9eaf826, #bfc9ff12 36%, transparent 67%); }
+.origami-trigger { --leaf: clamp(58px, 6.6vw, 104px); position: relative; width: 100%; height: 100%; display: block; padding: 0; background: transparent; border: 0; border-radius: 24px; perspective: 950px; cursor: pointer; touch-action: pan-y; -webkit-tap-highlight-color: transparent; }
+.origami-paper { position: absolute; z-index: 1; left: 44%; top: 50%; width: 0; height: clamp(270px, 28vw, 400px); transform-style: preserve-3d; transform: translateY(-50%) rotateX(-14deg) rotateY(-17deg) rotateZ(-8deg); pointer-events: none; }
+.glass-projection { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.refraction-window { position: absolute; inset: calc(-1 * var(--sampling-pad)); background: #f5faff08; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.refraction-world { position: absolute; display: block; opacity: .85; filter: blur(4px) saturate(1.12); transform-origin: center; }
+.paper-face {
+  --sign: 1;
+  --depth: 1;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--leaf);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  transform-origin: left center;
+  transform: translate3d(calc(var(--leaf) * (var(--i) - 3) * .54464), 0, calc(var(--leaf) * var(--depth) * .41934)) rotateY(calc(var(--sign) * 57deg));
+  border: 1px solid #ffffffd9;
+  border-right-color: #9cccf59c;
+  border-bottom-color: #a5baf2a8;
+  border-radius: 5px;
+  background: linear-gradient(165deg, #c8e9ff1f 0%, #b6e6fd38 18%, #aac9f84d 40%, #b4a2ee57 62%, #9bd8ee4d 82%, #def4ff30 100%);
+  box-shadow: inset 2px 0 3px #ffffffc9, inset -2px 0 5px #74a6e433, inset 0 2px 3px #ffffffdb, 5px 12px 26px #7c9bca17;
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  backdrop-filter: blur(18px) saturate(1.2);
+}
+.paper-face:nth-child(1) { --i: 0; }
+.paper-face:nth-child(2) { --i: 1; }
+.paper-face:nth-child(3) { --i: 2; }
+.paper-face:nth-child(4) { --i: 3; }
+.paper-face:nth-child(5) { --i: 4; }
+.paper-face:nth-child(6) { --i: 5; }
+.paper-face:nth-child(even) { --sign: -1; --depth: -1; background: linear-gradient(165deg, #d8ccfa26 0%, #b7c7f542 22%, #c0b2ef57 45%, #92d5ee4d 65%, #c6e8fa38 86%, #dcefff30 100%); }
+.has-refraction .paper-face { -webkit-backdrop-filter: none; backdrop-filter: none; background-color: transparent; }
+.paper-grain { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.paper-grain::before { content: ""; position: absolute; inset: -25% -100%; background: linear-gradient(115deg, transparent 15%, #ffffff0a 28%, #ffffff33 44%, #ffffff21 60%, #ffffff0a 74%, transparent 88%); filter: blur(4px); transform: translateX(calc(var(--unfold, 0) * 18%)); }
+.paper-glyph { position: relative; font: 600 clamp(24px, 2.6vw, 36px)/1 var(--font-sans); white-space: nowrap; letter-spacing: -.04em; opacity: 1; color: #5375a9; text-shadow: 0 -1px 1px #fff, 0 2px 2px #6d9cd329; }
+.paper-glyph--wide { font-size: clamp(18px, 2vw, 28px); letter-spacing: -.025em; }
+.paper-word { position: relative; opacity: 1; color: #5a77a5; font-size: 9px; line-height: 1.8; letter-spacing: 3px; writing-mode: vertical-rl; }
+.origami-hint { position: absolute; bottom: -3px; left: 0; right: 0; margin: 0; text-align: center; font-size: 10px; letter-spacing: 1px; color: #8b99b5; pointer-events: none; }
+.hint-touch { display: none; }
+.hero-scroll { position: absolute; z-index: 1; bottom: 24px; left: clamp(30px, 5vw, 80px); display: inline-flex; align-items: center; gap: 9px; color: #8b99b5; font-size: 10px; letter-spacing: .5px; }
+.hero-scroll svg { width: 13px; height: 18px; }
+#works { position: relative; max-width: 1680px; overflow-anchor: none; margin: 0 auto; padding: 0 40px; }
+.work-tools { position: sticky; top: 0; z-index: 10; padding-top: 20px; background: #f4f7fdf2; border-top: 0; border-bottom: 1px solid #dfe6f08a; }
+.grid { margin-top: 20px; }
+@supports not ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) { .paper-face { background-color: #dae9f29c; } }
+@media (min-width: 1700px) { .origami-trigger { --leaf: 104px; } }
+@media (max-width: 1100px) { .hero-shell { padding-left: 36px; padding-right: 36px; gap: 0; } #works { padding: 0 28px; } }
+@media (max-width: 760px) {
+  html { scroll-padding-top: 100px; }
+  .home-hero { min-height: 0; padding: 18px 14px 24px; }
+  .hero-shell { display: flex; flex-direction: column; align-items: stretch; min-height: 0; padding: 28px 25px 40px; border-radius: 25px; }
+  .hero-shell::before { background: radial-gradient(ellipse 80% 22% at 12% 0%, #b8eadc70, transparent 85%), radial-gradient(ellipse 100% 24% at 8% 48%, #c9b9f36e, transparent 85%), radial-gradient(ellipse 80% 25% at 24% 100%, #b4d5fa75, transparent 82%); }
+  .origami-backdrop { inset: 1px; }
+  .decor-orb { width: 160px; top: 46%; right: 12px; }
+  .decor-ring { width: 90px; left: 12px; bottom: 9%; }
+  .decor-tile { width: 70px; right: 20px; bottom: 24px; border-radius: 15px; }
+  .home-brand { padding: 6px 14px; margin-bottom: 20px; font-size: 12px; }
+  .home-identity { gap: 10px; margin-top: 6px; }
+  .home-identity span + span { gap: 10px; }
+  .home-intro h1 { font-size: clamp(38px, 8.9vw, 60px); -webkit-text-stroke: .3px currentColor; }
+  .home-description { margin-top: 19px; font-size: 12px; }
+  .home-actions { margin-top: 23px; }
+  .home-actions a { padding: 10px 18px; min-height: 39px; font-size: 11px; gap: 9px; }
+  .origami-scene { height: clamp(280px, 64vw, 400px); margin-top: 14px; }
+  .origami-trigger { --leaf: clamp(40px, 10vw, 72px); }
+  .origami-paper { left: 48%; height: clamp(220px, 54vw, 330px); }
+  .paper-face { gap: 17px; }
+  .paper-face { -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2); }
+  .has-refraction .paper-face { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .refraction-window { -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+  .refraction-world { filter: blur(3px) saturate(1.12); }
+  .paper-glyph { font-size: clamp(18px, 5vw, 30px); }
+  .paper-glyph--wide { font-size: clamp(16px, 4.2vw, 25px); }
+  .paper-word { font-size: 8px; letter-spacing: 2px; }
+  .origami-hint { bottom: -5px; font-size: 9px; }
+  .hero-scroll { bottom: 17px; left: 25px; font-size: 9px; }
+  #works { padding: 0 18px; }
+  .grid { margin-top: 12px; }
+}
+@media (hover: none) { .hint-pointer { display: none; } .hint-touch { display: inline; } }
+@media (prefers-reduced-motion: reduce) { .hero-atmosphere > span, .origami-backdrop > span { animation: none; } }

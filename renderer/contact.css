@@ -1,0 +1,9 @@
+.endnote { display: flex; align-items: flex-start; justify-content: flex-start; min-height: 128px; margin: 28px 0 0; padding: 24px 0; border: 0; border-top: 1px solid #e6e6e6; text-align: left; color: #738097; font-size: 13px; }
+.site-footer { width: min(1620px,100%); margin: 0 auto; padding: 4px 24px 38px; text-align: center; color: #8b95a5; font-size: 11px; line-height: 1.9; }
+.footer-line { display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; gap: 4px 22px; }
+.footer-copyright { margin: 0; }
+.footer-contacts { display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; gap: 4px 22px; }
+.site-footer a:hover,.site-footer button:hover { color: #53647b; }
+.footer-copy { padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; }
+.footer-registration { margin: 9px 0 0; }
+@media (max-width: 760px) { .endnote { min-height: 104px; margin-top: 22px; padding: 20px 0; font-size: 12px; }.site-footer { padding: 4px 20px 28px; }.footer-line,.footer-contacts { gap: 3px 14px; } }
