@@ -15,6 +15,7 @@ import { folders, validFolder, createFolder, ensureFolderPath, arrangeMedia } fr
 import { mediaDeletePlan, deleteMediaItems } from './lib/media-delete.mjs';
 import {releaseRetention} from './lib/release-retention.mjs';
 import {validateLocalRequest} from './lib/local-access.mjs';
+import {deploymentPlatforms,deploymentTarget,inspectDeployment,deploymentPackage} from './lib/deployment.mjs';
 
 export const root = path.dirname(fileURLToPath(import.meta.url));
 const mimeTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif', '.txt': 'text/plain; charset=utf-8', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4' };
@@ -69,21 +70,24 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
     return {
       projects: store.projects(), folders: folders(store), media: store.media().map(asset => ({ ...asset, url: `/api/media/${asset.id}/file`, references: store.references(asset.id) })),
       settings: store.get('settingsDraft'), settingsLive: store.get('settingsLive'), settingsRevision: store.get('settingsRevision'),
-      currentRelease: store.get('currentRelease'), releases: store.releases().map(({ snapshot, ...release }) => ({ ...release, count: snapshot.projects.length })),
+      currentRelease: store.get('currentRelease'), releases: store.releases().map(({ snapshot, ...release }) => ({ ...release, count: snapshot.projects.length,deployment:snapshot.deployment||{platform:'generic',projectName:'portfolio-site'} })),
       releaseRetention: releaseRetention(store),
-      capabilities:{backgroundLoop:true,sidebarPreview:true},
+      capabilities:{backgroundLoop:true,sidebarPreview:true,platformExport:true},
+      deploymentPlatforms,deploymentTarget:store.get('deploymentTarget')||{platform:'generic',projectName:'portfolio-site'},
       jobs: [...publisher.jobs.values()].slice(-10).reverse(),
     };
   }
-  function buildPublish(ids, includeSettings) {
+  function buildPublish(ids, includeSettings, targetInput) {
+    const target=deploymentTarget(targetInput);
     if (!Array.isArray(ids) || ids.length > 300 || new Set(ids).size !== ids.length) fail('请选择要发布的作品。');
     const rows = store.projects();
     const selected = ids.map(id => { const row = rows.find(row => row.id === id && !row.deletedAt); if (!row) fail('部分作品不存在。', 404); if (!row.draft.blocks.length && !row.draft.coverAssetId && !row.draft.description) fail(`“${row.draft.title}”还没有内容。`); return row; });
-    const snapshot = { settings: includeSettings ? store.get('settingsDraft') : store.get('settingsLive'), projects: rows.map(row => ids.includes(row.id) ? row.draft : row.live).filter(Boolean) };
+    const snapshot = { settings: includeSettings ? store.get('settingsDraft') : store.get('settingsLive'), projects: rows.map(row => ids.includes(row.id) ? row.draft : row.live).filter(Boolean),deployment:target };
     return publisher.start('publish', snapshot, () => {
       for (const row of selected) store.db.prepare('UPDATE projects SET live=? WHERE id=?').run(JSON.stringify(row.draft), row.id);
       if (includeSettings) store.set('settingsLive', snapshot.settings);
-    }, `发布${selected.length}个作品${includeSettings ? '及站点设置' : ''}`);
+      store.set('deploymentTarget',target);
+    }, `发布${selected.length}个作品${includeSettings ? '及站点设置' : ''}`,null,target);
   }
   const server = http.createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.setHeader('Referrer-Policy', 'same-origin');
@@ -213,15 +217,21 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
         if(input.sidebarClientId!=null){if(typeof input.sidebarClientId!=='string'||!/^[a-f0-9-]{36}$/.test(input.sidebarClientId)||input.keepPreviewId!=null&&(typeof input.keepPreviewId!=='string'||!/^v-\d+-[a-f0-9]{8}$/.test(input.keepPreviewId)))fail('预览标识格式不正确。');sidebar={clientId:input.sidebarClientId,keepId:input.keepPreviewId||null};}
         return respond(response, publisher.start('preview', snapshot, () => {}, '草稿预览',sidebar), 202);
       }
-      if (pathname === '/api/publish' && request.method === 'POST') { const input = await jsonBody(request); return respond(response, buildPublish(input.projectIds, Boolean(input.includeSettings)), 202); }
+      if (pathname === '/api/publish' && request.method === 'POST') { const input = await jsonBody(request); return respond(response, buildPublish(input.projectIds, Boolean(input.includeSettings),input.deployment), 202); }
       const jobMatch = pathname.match(/^\/api\/jobs\/([\w-]+)$/);
       if (jobMatch && request.method === 'GET') { const job = publisher.jobs.get(jobMatch[1]); if (!job) fail('任务不存在，请刷新发布记录。', 404); return respond(response, job); }
       const exportMatch = pathname.match(/^\/api\/export\/([\w-]+)$/);
       if (exportMatch && request.method === 'GET') {
-        if (!store.releases().some(release => release.id === exportMatch[1])) fail('版本不存在。', 404);
+        const release=store.releases().find(release=>release.id===exportMatch[1]);if(!release)fail('版本不存在。',404);
         const kind = url.searchParams.get('kind') === 'source' ? 'source' : 'dist';
-        const bytes = await zipDirectory(path.join(dataDir, 'releases', exportMatch[1], kind));
-        response.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': bytes.length, 'Content-Disposition': `attachment; filename="portfolio-${kind}-${exportMatch[1]}.zip"` }); response.end(bytes); return;
+        let bytes,suffix=kind;
+        if(kind==='source')bytes=await zipDirectory(path.join(dataDir,'releases',release.id,'source'));
+        else{
+          const saved=release.snapshot.deployment||{platform:'generic',projectName:'portfolio-site'},target=deploymentTarget({platform:url.searchParams.get('platform')??saved.platform,projectName:url.searchParams.get('projectName')??saved.projectName}),directory=path.join(dataDir,'releases',release.id,'dist');
+          if(url.searchParams.get('check')==='1'){const {report}=await inspectDeployment(directory,target,store);return respond(response,report);}
+          ({bytes}=await deploymentPackage(directory,target,store));suffix=target.platform==='generic'?'dist':target.platform;
+        }
+        response.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': bytes.length, 'Content-Disposition': `attachment; filename="portfolio-${suffix}-${exportMatch[1]}.zip"` }); response.end(bytes); return;
       }
       if (pathname === '/api/rollback' && request.method === 'POST') {
         const { id } = await jsonBody(request), release = store.releases().find(release => release.id === id); if (!release) fail('版本不存在。', 404);
