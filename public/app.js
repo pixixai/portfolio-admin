@@ -34,13 +34,17 @@ function toggleWorkSelection(id) {
   $('#works-results').innerHTML = renderWorksResults();
 }
 function toast(message, error = false) { const node = document.createElement('div'); node.className = 'toast' + (error ? ' error' : ''); node.innerHTML = icon(error ? 'close' : 'check') + `<span>${esc(message)}</span>`; $('#toasts').append(node); setTimeout(() => node.remove(), error ? 8000 : 3600); }
-async function api(url, method = 'GET', data) {
-  const response = await fetch(url, { method, headers: data === undefined ? {} : { 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || '操作未完成，请重试。');
-  return result;
+async function api(url, method = 'GET', data, options = {}) {
+  let release=null;
+  if(!options.backgroundPreview&&window.PortfolioSitePreview?.blocksRequest(url,method))release=await window.PortfolioSitePreview.beforeRequest(url,method);
+  try {
+    const response=await fetch(url,{method,headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});
+    const result=await response.json();
+    if(!response.ok)throw Object.assign(new Error(result.error||'操作未完成，请重试。'),{status:response.status});
+    return result;
+  } finally {release?.();}
 }
-async function loadState(renderPage = true) { db = await api('/api/state'); selected = new Set([...selected].filter(id => db.projects.some(row => row.id === id && !row.deletedAt))); if (renderPage) render(); }
+async function loadState(renderPage = true) { db = await api('/api/state'); selected = new Set([...selected].filter(id => db.projects.some(row => row.id === id && !row.deletedAt))); if (renderPage) render(); else window.PortfolioSitePreview?.changed(); }
 function btn(label, action, style = '', name = '', extra = '') { return `<button type="button" class="btn ${style}" data-action="${action}" ${extra}>${name ? icon(name) : ''}${label}</button>`; }
 function field(label, name, value, { textarea = false, type = 'text', hint = '', placeholder = '', attributes = '' } = {}) {
   return `<label class="field"><span>${label}</span>${textarea ? `<textarea data-field="${name}" ${attributes} placeholder="${esc(placeholder)}">${esc(value)}</textarea>` : `<input type="${type}" data-field="${name}" value="${esc(value)}" ${attributes} placeholder="${esc(placeholder)}">`}${hint ? `<small>${hint}</small>` : ''}</label>`;
@@ -73,8 +77,8 @@ function render() {
   const editorScroll = $('.editor-scroll')?.scrollTop || 0; closeBlockMenu();
   window.PortfolioRichText?.destroyAll();
   const active = activeProjects(), published = active.filter(row => row.live).length;
-  $('#app').innerHTML = `<div class="layout"><aside class="sidebar"><div class="brand"><span class="brand-mark"></span><div><div data-brand-container>${renderBrandName()}</div><small>作品管理</small></div></div><p class="nav-heading">创作空间</p><nav class="nav" aria-label="管理导航">${Object.entries(labels).map(([key, label]) => `<button data-nav="${key}" class="${view === key ? 'active' : ''}" ${view === key ? 'aria-current="page"' : ''}>${icon(navIcons[key])}<span class="nav-label">${label}</span>${key === 'works' || key === 'trash' ? `<span class="badge">${key === 'works' ? active.length : db.projects.filter(row => row.deletedAt).length}</span>` : ''}</button>`).join('')}</nav><div class="sidebar-bottom"><div class="workspace-note"><strong>每一次创意，都值得被看见</strong>编辑、预览，再从容发布。<br>让作品持续生长。</div></div></aside><main class="main"><header class="topbar"><div class="crumb">创作空间 <span>/</span><span>${labels[view]}</span></div><div class="top-actions"><span class="site-status"><i class="dot"></i>${published} 个作品已发布</span><a class="btn" href="/site/" target="_blank" rel="noopener">${icon('external')}查看站点</a>${btn('导入项目', 'import-dialog', '', 'folder', 'data-job-action')}${btn('发布与导出', 'publish-dialog', 'primary', 'upload', 'data-job-action')}</div></header><section class="page" id="page">${renderMain()}</section></main></div>${editor ? renderEditorLayer() : ''}`;
-  updateBusy(); syncEditorLayer(editorScroll); prepareHomeVideoPreviews(); syncSettingsSaveButton();
+  $('#app').innerHTML = `<div class="layout"><aside class="sidebar"><div class="brand"><span class="brand-mark"></span><div><div data-brand-container>${renderBrandName()}</div><small>作品管理</small></div></div><p class="nav-heading">创作空间</p><nav class="nav" aria-label="管理导航">${Object.entries(labels).map(([key, label]) => `<button data-nav="${key}" class="${view === key ? 'active' : ''}" ${view === key ? 'aria-current="page"' : ''}>${icon(navIcons[key])}<span class="nav-label">${label}</span>${key === 'works' || key === 'trash' ? `<span class="badge">${key === 'works' ? active.length : db.projects.filter(row => row.deletedAt).length}</span>` : ''}</button>`).join('')}</nav><div class="sidebar-bottom"><div class="workspace-note"><strong>每一次创意，都值得被看见</strong>编辑、预览，再从容发布。<br>让作品持续生长。</div></div></aside><main class="main"><header class="topbar"><div class="crumb">创作空间 <span>/</span><span>${labels[view]}</span></div><div class="top-actions"><span class="site-status"><i class="dot"></i>${published} 个作品已发布</span>${btn('查看站点','toggle-site-preview','','eye')}<a class="icon-btn" href="/site/" target="_blank" rel="noopener" aria-label="新标签查看已发布站点" title="新标签查看已发布站点">${icon('external')}</a>${btn('导入项目', 'import-dialog', '', 'folder', 'data-job-action')}${btn('发布与导出', 'publish-dialog', 'primary', 'upload', 'data-job-action')}</div></header><section class="page" id="page">${renderMain()}</section></main></div>${editor ? renderEditorLayer() : ''}`;
+  updateBusy(); syncEditorLayer(editorScroll); prepareHomeVideoPreviews(); syncSettingsSaveButton(); window.PortfolioSitePreview?.sync();
 }
 function renderMain() {
   if (view === 'works' || view === 'trash') return renderWorks();
@@ -113,6 +117,7 @@ function renderWorksResults() {
 }
 
 function renderPreview() {
+  if(window.PortfolioSitePreview?.isOpen())return '<p class="inline-note">效果已在右侧实时预览中显示。</p>';
   return `<div class="preview-tools"><div class="segmented"><button data-device="desktop" class="${previewDevice === 'desktop' ? 'active' : ''}" aria-label="电脑预览">${icon('desktop')}</button><button data-device="mobile" class="${previewDevice === 'mobile' ? 'active' : ''}" aria-label="手机预览">${icon('phone')}</button></div>${btn(previewUrl ? '刷新预览' : '预览', 'preview-editor', 'small soft', 'eye', 'data-job-action')}</div>${previewUrl ? `<div class="preview-viewport ${previewDevice === 'mobile' ? 'mobile' : ''}"><iframe src="${esc(previewUrl)}" title="作品真实页面预览"></iframe></div><p class="inline-note" style="padding:10px 14px">${previewVersion === editVersion ? '预览与当前草稿一致' : '内容已修改，刷新预览查看最新效果'} · <a href="${esc(previewUrl)}" target="_blank" rel="noopener">新窗口打开</a></p>` : `<div class="preview-empty">${icon('eye')}点击“预览”，生成与展示站<br>一致的作品页面。</div>`}`;
 }
 
@@ -126,13 +131,13 @@ function prepareSettings(value) {
   result.footer.registrationText ??= '';result.footer.registrationUrl ??= '';
   result.footer.text ??= `© ${result.year} ${result.owner} · 作品集`;
   result.homeBackground ||= {videos:[{assetId:null,playbackRate:1}],finalFrameAssetId:null};
-  result.homeBackground.shadeOpacity ??= 80;return result;
+  result.homeBackground.shadeOpacity ??= 80;result.homeBackground.loop ??= true;return result;
 }
 function comparableSettings(value) {
   const normalize=item=>typeof item==='string'?item.trim():Array.isArray(item)?item.map(normalize):item&&typeof item==='object'?Object.fromEntries(Object.entries(item).map(([key,entry])=>[key,normalize(entry)])):item;
   return normalize(value);
 }
-function refreshSettingsDirty() { return settingsDirty=!!settingsLocal&&!equal(comparableSettings(settingsLocal),comparableSettings(settingsBaseline)); }
+function refreshSettingsDirty() { window.PortfolioSitePreview?.changed();return settingsDirty=!!settingsLocal&&!equal(comparableSettings(settingsLocal),comparableSettings(settingsBaseline)); }
 function renderSettings() {
   if(!settingsLocal){settingsLocal=prepareSettings(db.settings);settingsBaseline=copy(settingsLocal);}
   return `<div class="settings-page"><div class="settings-heading">${heading('展示设置', '保存为设置草稿，发布网站后生效。', `${btn('预览', 'preview-settings', '', 'eye', 'data-job-action')}${btn('保存设置', 'save-settings', 'primary', 'check')}`)}</div><div class="settings-sections"><section class="content-card settings-card" aria-labelledby="settings-background-title">${renderHomeBackgroundSettings()}</section><section class="content-card settings-card" aria-labelledby="settings-personal-title">${renderPersonalSettings()}</section><section class="content-card settings-card" aria-labelledby="settings-site-title">${renderSiteSettings()}</section></div></div>`;
@@ -172,14 +177,15 @@ function renderHomeBackgroundSettings() {
   const rows=background.videos.map((item,index)=>{
     const asset=assetById(item.assetId), image=item.type==='image'||asset?.mime.startsWith('image/');
     const preview=image?`<img src="${esc(asset.url)}" alt="${esc(asset.name)}" draggable="false">`:renderHomeVideoPreview(asset);
-    return `<article class="home-video-item" data-home-video="${index}"><button type="button" class="home-media-handle" data-home-drag="${index}" title="拖动排序，也可用上下方向键调整" aria-label="拖动第${index+1}项背景媒体排序">${icon('drag')}<span class="home-media-position" aria-hidden="true">${String(index+1).padStart(2,'0')}</span></button><div class="home-video-preview">${preview}${asset?`<button class="home-reveal-asset" type="button" data-action="home-reveal-asset" data-id="${asset.id}" title="在素材库显示">在素材库显示</button>`:''}</div><strong class="home-media-name" title="${esc(asset?.name||'默认彩墨 1.mp4')}">${esc(asset?.name||'默认彩墨 1.mp4')}</strong><label class="home-media-setting">${image?'停留时长':'播放速度'}<span><input type="number" min="${image?1:.25}" max="${image?120:4}" step="${image?1:.25}" data-setting="homeBackground.videos.${index}.${image?'duration':'playbackRate'}" value="${image?item.duration??5:item.playbackRate}" aria-label="${image?'图片'+(index+1)+'停留秒数':'视频'+(index+1)+'播放速度'}">${image?'秒':'倍'}</span></label>${btn('移除','home-bg-remove','small text','trash',`data-index="${index}"`)}</article>`;
+    return `<article class="home-video-item" data-home-video="${index}"><button type="button" class="home-media-handle" data-home-drag="${index}" title="拖动排序，也可用上下方向键调整" aria-label="拖动第${index+1}项背景媒体排序">${icon('drag')}<span class="home-media-position" aria-hidden="true">${String(index+1).padStart(2,'0')}</span></button><div class="home-video-preview">${preview}${asset?`<button class="home-reveal-asset" type="button" data-action="home-reveal-asset" data-id="${asset.id}" title="在素材库显示">在素材库显示</button>`:''}</div><strong class="home-media-name" title="${esc(asset?.name||'默认首页背景.mp4')}">${esc(asset?.name||'默认首页背景.mp4')}</strong><label class="home-media-setting">${image?'停留时长':'播放速度'}<span><input type="number" min="${image?1:.25}" max="${image?120:4}" step="${image?1:.25}" data-setting="homeBackground.videos.${index}.${image?'duration':'playbackRate'}" value="${image?item.duration??5:item.playbackRate}" aria-label="${image?'图片'+(index+1)+'停留秒数':'视频'+(index+1)+'播放速度'}">${image?'秒':'倍'}</span></label>${btn('移除','home-bg-remove','small text','trash',`data-index="${index}"`)}</article>`;
   }).join('');
-  return `<h2 id="settings-background-title">首页背景</h2><p>图片与视频按列表顺序展示一次。可点击首页空白处暂停或继续，结束后显示定格图，未设置时保留最后一项画面。</p><div class="home-shade-control"><label for="home-shade-range">黑色蒙板不透明度</label><div class="home-shade-inputs"><input id="home-shade-range" type="range" min="0" max="100" step="1" data-home-shade value="${background.shadeOpacity}" aria-label="黑色蒙板不透明度滑块" aria-valuetext="${background.shadeOpacity}% 不透明"><label><input type="number" min="0" max="100" step="1" data-home-shade value="${background.shadeOpacity}" aria-label="黑色蒙板不透明度数值"><span>%</span></label></div><p>0% 无蒙板，100% 纯黑，默认80%。不影响文字和按钮。</p></div><div class="home-background-actions">${btn('上传媒体','home-bg-upload','','upload')}${btn('从素材库选择','home-bg-select','','image')}${btn('添加默认视频','home-bg-default','small text')}</div><div class="home-background-list">${rows||'<p class="inline-note">尚未添加媒体。发布后将仅显示静态背景或结束定格图。</p>'}</div><p class="inline-note blue home-background-note">拖动左侧手柄排序。视频速度0.25～4倍，图片默认停留5秒（可设1～120秒），最多30项媒体。保存设置后，发布网站时勾选「同时发布网站设置」。</p><hr class="settings-divider"><h3>结束定格帧</h3><p>所有媒体展示结束后显示此图片。不设置时，自动保留最后一项画面。</p>${frame?`<img class="home-final-preview" src="${frame.url}" alt="结束定格帧">`:''}<div class="home-background-actions">${btn('上传定格图','home-bg-frame-upload','','upload')}${btn(frame?'更换定格图':'选择定格图','home-bg-frame-select','','image')}${frame?btn('移除定格图','home-bg-frame-clear','small text','trash'):''}</div>`;
+  return `<h2 id="settings-background-title">首页背景</h2><p>图片与视频按列表顺序播放；可开启循环。单击首页空白处可暂停或继续。</p><div class="home-shade-control"><label for="home-shade-range">黑色蒙板不透明度</label><div class="home-shade-inputs"><input id="home-shade-range" type="range" min="0" max="100" step="1" data-home-shade value="${background.shadeOpacity}" aria-label="黑色蒙板不透明度滑块" aria-valuetext="${background.shadeOpacity}% 不透明"><label><input type="number" min="0" max="100" step="1" data-home-shade value="${background.shadeOpacity}" aria-label="黑色蒙板不透明度数值"><span>%</span></label></div><p>0% 无蒙板，100% 纯黑，默认80%。不影响文字和按钮。</p></div><div class="home-background-actions">${btn('上传媒体','home-bg-upload','','upload')}${btn('从素材库选择','home-bg-select','','image')}${btn('添加默认视频','home-bg-default','small text')}<button type="button" role="switch" class="first-image-switch home-loop-switch" data-action="home-bg-loop" aria-checked="${background.loop}" aria-controls="home-final-settings"><span class="switch-track" aria-hidden="true"></span><span>循环播放</span></button></div><div class="home-background-list">${rows||'<p class="inline-note">尚未添加媒体。发布后将仅显示静态背景或结束定格图。</p>'}</div><p class="inline-note blue home-background-note">拖动左侧手柄排序。视频速度0.25～4倍，图片默认停留5秒（可设1～120秒），最多30项媒体。保存设置后，发布网站时勾选「同时发布网站设置」。</p><section id="home-final-settings" ${background.loop?'hidden':''}><hr class="settings-divider"><h3>结束定格帧</h3><p>所有媒体展示结束后显示此图片。不设置时，自动保留最后一项画面。</p>${frame?`<img class="home-final-preview" src="${frame.url}" alt="结束定格帧">`:''}<div class="home-background-actions">${btn('上传定格图','home-bg-frame-upload','','upload')}${btn(frame?'更换定格图':'选择定格图','home-bg-frame-select','','image')}${frame?btn('移除定格图','home-bg-frame-clear','small text','trash'):''}</div></section>`;
 }
 async function homeBackgroundAction(name,element) {
   const background=settingsLocal.homeBackground;
   const update=()=>{refreshSettingsDirty();render();};
   const add=assets=>{if(background.videos.length+assets.length>30)throw new Error('首页背景最多支持30项媒体。');background.videos.push(...assets.map(asset=>asset.mime.startsWith('image/')?{assetId:asset.id,type:'image',duration:5}:{assetId:asset.id,playbackRate:1}));update();};
+  if(name==='home-bg-loop'){background.loop=!background.loop;return update();}
   if(name==='home-bg-upload')return chooseFiles(async files=>add(await uploadFiles(files,{kind:'background'})),'background');
   if(name==='home-bg-select')return openMediaPicker(true,add,'background');
   if(name==='home-bg-default'){if(background.videos.length>=30)throw new Error('首页背景最多支持30项媒体。');background.videos.push({assetId:null,playbackRate:1});return update();}
@@ -331,7 +337,7 @@ async function uploadFiles(files, { projectId = null, kind = 'all', folderId = n
   } finally { uploading--; progress.hidden = true; }
 }
 
-function changed() { dirty = true; editVersion++; clearTimeout(saveTimer); if (draftSaveFeedback && draftSaveFeedback.state !== 'saving') resetDraftSaveFeedback(); updateSaveState(); saveTimer = setTimeout(() => saveProject(true).catch(error => { updateSaveState('自动保存未完成，请点击保存重试'); toast(error.message, true); }), 1200); }
+function changed() { window.PortfolioSitePreview?.changed();dirty = true; editVersion++; clearTimeout(saveTimer); if (draftSaveFeedback && draftSaveFeedback.state !== 'saving') resetDraftSaveFeedback(); updateSaveState(); saveTimer = setTimeout(() => saveProject(true).catch(error => { updateSaveState('自动保存未完成，请点击保存重试'); toast(error.message, true); }), 1200); }
 function updateSaveState(message) { const node = $('#save-state'); if (node) node.innerHTML = icon(dirty ? 'edit' : 'check') + esc(message || (dirty ? '有修改，正在等待自动保存…' : '草稿已保存')); }
 function syncDraftSaveButton() {
   const button = $('.editor-heading [data-action=save]'); if (!button) return;
@@ -471,6 +477,7 @@ async function action(name, element) {
   const id = element.dataset.id;
   if (name.startsWith('home-bg-')) return homeBackgroundAction(name,element);
   if (documentActions.has(name)) return documentAction(name, element);
+  if (name === 'toggle-site-preview') return window.PortfolioSitePreview?.toggle();
   if (name === 'reload') return location.reload();
   if (name === 'close-dialog') return closeDialog();
   if (name === 'settings-leave' || name === 'settings-save-leave') { const resolve=confirmResolve;confirmResolve=null;closeDialog();resolve?.(name==='settings-save-leave'?'save':'leave');return; }
@@ -482,7 +489,7 @@ async function action(name, element) {
   if (name === 'back' || name === 'close-editor') return closeEditor();
   if (name === 'save') return saveProject();
   if (name === 'clear-selection') { selected.clear(); return render(); }
-  if (name === 'import-dialog') { if(busy||!await navigate('works'))return;projectImport={};return renderProjectImport(); }
+  if (name === 'import-dialog') { if(window.PortfolioSitePreview){const release=await window.PortfolioSitePreview.beforeRequest('/api/import/commit','POST');release?.();}if(busy||!await navigate('works'))return;projectImport={};return renderProjectImport(); }
   if (name === 'import-choose') return chooseProjectPackage();
   if (name === 'import-confirm') return commitProjectImport();
   if (name === 'publish-dialog') { if (editor && dirty) await saveProject(true); if (settingsDirty) await saveSettings(); return openPublishDialog(); }

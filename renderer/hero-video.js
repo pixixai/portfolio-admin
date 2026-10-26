@@ -9,7 +9,7 @@ export function initHeroVideo({ reducedMotion, isBlocked = () => false }) {
   const root = new URL('../', configURL);
   let playlist = [], current = 0, active = -1, desired = -1, ready = false;
   let visible = true, suspended = false, userPaused = false, finished = false;
-  let blocked = false, disposed = false, frameToken = 0;
+  let blocked = false, disposed = false, frameToken = 0, loop = false;
   const pending = new Set(), failed = new Set();
   const images = new Map();
   let imageIndex = -1, imageTimer = null, imageRemaining = 0, imageStarted = 0;
@@ -41,16 +41,25 @@ export function initHeroVideo({ reducedMotion, isBlocked = () => false }) {
     }
     return true;
   }
-  function prepare(slot, index) {
+  function nextIndex(index) {
+    for(let checked=0;checked<playlist.length;checked++,index++){
+      if(index>=playlist.length){if(!loop)return -1;index=0;}
+      if(!failed.has(index))return index;
+    }return -1;
+  }
+  function prepareNext(slot){const next=nextIndex(current+1);if(next>=0)prepare(slot,next,true);}
+  function prepare(slot, index, rewind=false) {
     const item = playlist[index]; if (!item || reducedMotion.matches) return;
     if (item.type === 'image') { prepareImage(index); return; }
     const video = videos[slot];
-    if (video.getAttribute('src') !== item.src) { video.src = item.src; video.dataset.playlistIndex = String(index); }
+    if (video.getAttribute('src') !== item.src) video.src = item.src;
+    video.dataset.playlistIndex = String(index);
+    if(rewind){try{video.currentTime=0;}catch{}}
     video.defaultPlaybackRate = video.playbackRate = item.playbackRate;
   }
   function finish() {
     finished = true; desired = -1; stop(); state('finished');
-    if (finalImage.getAttribute('src') && finalImage.complete && finalImage.naturalWidth) hero.classList.add('is-final-frame');
+    if (!loop && finalImage.getAttribute('src') && finalImage.complete && finalImage.naturalWidth) hero.classList.add('is-final-frame');
   }
   function reveal(slot) {
     if (disposed || desired !== slot || !allowed()) return;
@@ -59,7 +68,7 @@ export function initHeroVideo({ reducedMotion, isBlocked = () => false }) {
     slide?.classList.remove('is-active');
     if (previous >= 0 && previous !== slot) videos[previous].pause();
     hero.classList.add('is-video-ready'); hero.classList.remove('is-final-frame'); state('playing');
-    prepare(1-slot, current+1);
+    prepareNext(1-slot);
   }
   function onPlaying(event) {
     const slot = videos.indexOf(event.target);
@@ -82,7 +91,7 @@ export function initHeroVideo({ reducedMotion, isBlocked = () => false }) {
       stop();
       if (finished) {
         if (active >= 0 && !slide?.classList.contains('is-active')) { videos[active].classList.add('is-active'); hero.classList.add('is-video-ready'); }
-        if (finalImage.complete && finalImage.naturalWidth && finalImage.getAttribute('src')) hero.classList.add('is-final-frame');
+        if (!loop && finalImage.complete && finalImage.naturalWidth && finalImage.getAttribute('src')) hero.classList.add('is-final-frame');
         state('finished');
       } else state(blocked ? 'blocked' : 'paused');
       return;
@@ -91,7 +100,7 @@ export function initHeroVideo({ reducedMotion, isBlocked = () => false }) {
     if (playlist[current]?.type === 'image') {
       desired = -1; stop();
       if (!displayImage(current)) { state('loading'); return; }
-      state('playing'); prepare(active < 0 ? 0 : 1-active, current+1);
+      state('playing'); prepareNext(active < 0 ? 0 : 1-active);
       imageStarted = performance.now(); imageTimer = setTimeout(() => { imageTimer = null; imageRemaining = 0; if (allowed()) advance(current+1); }, imageRemaining);
       return;
     }
@@ -110,10 +119,9 @@ export function initHeroVideo({ reducedMotion, isBlocked = () => false }) {
     } catch { pending.delete(video); blocked = true; state('blocked'); }
   }
   function advance(index) {
-    current = index;
-    while (failed.has(current) && current < playlist.length) current++;
-    if (current >= playlist.length) { finish(); return; }
-    desired = active < 0 ? 0 : 1-active; blocked = false; activity();
+    const next=nextIndex(index);if(next<0){finish();return;}
+    current=next;imageIndex=-1;
+    desired = active < 0 ? 0 : 1-active; blocked = false;prepare(desired,current,true);activity();
   }
   function onEnded(event) { if (playlist[current]?.type !== 'image' && videos.indexOf(event.target) === active) advance(current+1); }
   function onError(event) {
@@ -136,7 +144,7 @@ export function initHeroVideo({ reducedMotion, isBlocked = () => false }) {
   }
   const hide = () => { suspended = true; activity(); };
   const show = () => { suspended = false; activity(); };
-  const onFinalLoad = () => { if (finished && !reducedMotion.matches) hero.classList.add('is-final-frame'); };
+  const onFinalLoad = () => { if (!loop && finished && !reducedMotion.matches) hero.classList.add('is-final-frame'); };
   const observer = typeof IntersectionObserver === 'function' ? new IntersectionObserver(entries => { visible = entries[0].isIntersecting; activity(); }) : null;
   observer?.observe(hero);
   videos.forEach(video => { video.addEventListener('playing',onPlaying); video.addEventListener('ended',onEnded); video.addEventListener('error',onError); });
@@ -156,7 +164,8 @@ export function initHeroVideo({ reducedMotion, isBlocked = () => false }) {
     const shadeOpacity=Number.isFinite(config.shadeOpacity)?Math.min(100,Math.max(0,config.shadeOpacity)):80;
     hero.style.setProperty('--hero-shade-opacity',String(shadeOpacity/100));
     playlist = (Array.isArray(config.videos) ? config.videos : []).slice(0,30).filter(item=>item&&typeof item==='object').map(item => ({src:typeof item.src === 'string' ? safeURL(item.src) : null,type:item.type==='image'?'image':'video',duration:Math.min(120,Math.max(1,Number(item.duration)||5)),playbackRate:Math.min(4,Math.max(.25,Number(item.playbackRate)||1))})).filter(item=>item.src);
-    if (typeof config.finalFrame === 'string') { const url = safeURL(config.finalFrame); if (url) finalImage.src = url; }
+    loop=config.loop!==false;
+    if (!loop && typeof config.finalFrame === 'string') { const url = safeURL(config.finalFrame); if (url) finalImage.src = url; }
     ready = true; activity();
   }
   configure();

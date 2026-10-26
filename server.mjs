@@ -71,6 +71,7 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
       settings: store.get('settingsDraft'), settingsLive: store.get('settingsLive'), settingsRevision: store.get('settingsRevision'),
       currentRelease: store.get('currentRelease'), releases: store.releases().map(({ snapshot, ...release }) => ({ ...release, count: snapshot.projects.length })),
       releaseRetention: releaseRetention(store),
+      capabilities:{backgroundLoop:true,sidebarPreview:true},
       jobs: [...publisher.jobs.values()].slice(-10).reverse(),
     };
   }
@@ -208,7 +209,9 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
       if (pathname === '/api/preview' && request.method === 'POST') {
         const input = await jsonBody(request), snapshot = { settings: input.settings ? validateSettings(input.settings,store) : store.get('settingsDraft'), projects: store.projects().filter(row => !row.deletedAt).map(row => row.draft) };
         if (input.project) { const row = store.project(input.project.id); if (!row || row.deletedAt) fail('作品不存在。', 404); const project = validateProject(input.project, row.draft, store); snapshot.projects = snapshot.projects.map(doc => doc.id === project.id ? project : doc); }
-        return respond(response, publisher.start('preview', snapshot, () => {}, '草稿预览'), 202);
+        let sidebar=null;
+        if(input.sidebarClientId!=null){if(typeof input.sidebarClientId!=='string'||!/^[a-f0-9-]{36}$/.test(input.sidebarClientId)||input.keepPreviewId!=null&&(typeof input.keepPreviewId!=='string'||!/^v-\d+-[a-f0-9]{8}$/.test(input.keepPreviewId)))fail('预览标识格式不正确。');sidebar={clientId:input.sidebarClientId,keepId:input.keepPreviewId||null};}
+        return respond(response, publisher.start('preview', snapshot, () => {}, '草稿预览',sidebar), 202);
       }
       if (pathname === '/api/publish' && request.method === 'POST') { const input = await jsonBody(request); return respond(response, buildPublish(input.projectIds, Boolean(input.includeSettings)), 202); }
       const jobMatch = pathname.match(/^\/api\/jobs\/([\w-]+)$/);

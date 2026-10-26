@@ -21,7 +21,7 @@ test('首页背景上传、排序倍速、定格帧校验、设置草稿发布�
   const one=await upload(video,'一.mp4','video/mp4'),two=await upload(video2,'二.mp4','video/mp4');
   // Reuse a real image from the imported collection for a valid final still.
   const before=await api('/api/state'),frame=before.media.find(asset=>asset.mime.startsWith('image/'));
-  const background={videos:[{assetId:one.id,playbackRate:.5},{assetId:two.id,playbackRate:1.5}],finalFrameAssetId:frame.id,shadeOpacity:80};
+  const background={videos:[{assetId:one.id,playbackRate:.5},{assetId:two.id,playbackRate:1.5}],finalFrameAssetId:frame.id,shadeOpacity:80,loop:false};
   for(const value of [0,5,null])await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,homeBackground:{...background,videos:[{assetId:one.id,playbackRate:value}]}},400);
   await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,homeBackground:{...background,videos:[{assetId:frame.id,type:'video',playbackRate:1}]}},400);
   for(const duration of [0,121,'5'])await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,homeBackground:{...background,videos:[{assetId:frame.id,type:'image',duration}]}},400);

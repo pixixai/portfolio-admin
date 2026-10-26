@@ -82,7 +82,7 @@ try {
   const registrationUrl = site.footer?.registrationUrl || "";
   if (registrationUrl && new URL(registrationUrl).protocol !== "https:") throw new Error("Registration link must use HTTPS.");
   const footerRegistration = registrationText ? `<p class="footer-registration">${registrationUrl ? `<a href="${e(registrationUrl)}" target="_blank" rel="noopener">${registrationText}</a>` : registrationText}</p>` : "";
-  await write("data/home-background.json", JSON.stringify({ ...(site.homeBackground ?? { videos: [{ src: "assets/home/home-background.mp4", playbackRate: 1 }], finalFrame: null }), shadeOpacity: site.homeBackground?.shadeOpacity ?? 80 }, null, 2));
+  await write("data/home-background.json", JSON.stringify({ ...(site.homeBackground ?? { videos: [{ src: "assets/home/home-background.mp4", playbackRate: 1 }], finalFrame: null }), shadeOpacity: site.homeBackground?.shadeOpacity ?? 80, loop: site.homeBackground?.loop !== false }, null, 2));
   const categories = [
     ...new Set([
       ...(site.categories ?? []),
