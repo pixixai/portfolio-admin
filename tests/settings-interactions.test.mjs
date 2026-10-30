@@ -24,7 +24,7 @@ async function fixture(t,seed=false){
   const w=new Window({url:base,settings:{disableCSSFileLoading:true,disableJavaScriptFileLoading:true,disableIframePageLoading:true}}),errors=[];t.after(()=>w.happyDOM.abort());
   const realFetch=(url,options={})=>fetch(new URL(url,base),{...options,headers:{...options.headers,Cookie:cookie}});w.fetch=realFetch;w.addEventListener('error',event=>errors.push(event.message));
   w.document.write(await readFile(path.join(root,'public/index.html'),'utf8'));
-  w.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n'));
+  w.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n'));
   const $=selector=>w.document.querySelector(selector),$$=selector=>[...w.document.querySelectorAll(selector)];
   const click=selector=>{const node=$(selector);assert.ok(node,selector);node.click();};
   const input=(key,value)=>{const node=$(`[data-setting="${key}"]`);node.value=value;node.dispatchEvent(new w.Event('input',{bubbles:true}));};

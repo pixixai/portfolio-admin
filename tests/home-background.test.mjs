@@ -21,7 +21,7 @@ test('首页背景上传、排序倍速、定格帧校验、设置草稿发布�
   const one=await upload(video,'一.mp4','video/mp4'),two=await upload(video2,'二.mp4','video/mp4');
   // Reuse a real image from the imported collection for a valid final still.
   const before=await api('/api/state'),frame=before.media.find(asset=>asset.mime.startsWith('image/'));
-  const background={videos:[{assetId:one.id,playbackRate:.5},{assetId:two.id,playbackRate:1.5}],finalFrameAssetId:frame.id,shadeOpacity:80,loop:false};
+  const background={videos:[{assetId:one.id,playbackRate:.5},{assetId:two.id,playbackRate:1.5}],finalFrameAssetId:frame.id,shadeOpacity:80,shadeColor:'#000000',loop:false};
   for(const value of [0,5,null])await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,homeBackground:{...background,videos:[{assetId:one.id,playbackRate:value}]}},400);
   await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,homeBackground:{...background,videos:[{assetId:frame.id,type:'video',playbackRate:1}]}},400);
   for(const duration of [0,121,'5'])await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,homeBackground:{...background,videos:[{assetId:frame.id,type:'image',duration}]}},400);
@@ -29,7 +29,8 @@ test('首页背景上传、排序倍速、定格帧校验、设置草稿发布�
   await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,footer:{registrationText:'测试',registrationUrl:'javascript:alert(1)'}},400);
   for(const value of ['x'.repeat(1001),42])await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,footer:{text:value}},400);
   for(const value of [-1,101,80.5,'50'])await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,homeBackground:{...background,shadeOpacity:value}},400);
-  const {shadeOpacity,...legacyBackground}=background;
+  for(const value of ['#fff','red','#000000;display:none',80,{}])await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,homeBackground:{...background,shadeColor:value}},400);
+  const {shadeOpacity,shadeColor,...legacyBackground}=background;
   await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,homeBackground:legacyBackground});
   let data=await api('/api/state');assert.deepEqual(data.settings.homeBackground,background);assert.notDeepEqual(data.settingsLive.homeBackground,background,'保存不修改发布设置');
   assert.equal(app.store.references(one.id).inSettings,true);
@@ -40,7 +41,7 @@ test('首页背景上传、排序倍速、定格帧校验、设置草稿发布�
   w.XMLHttpRequest=class{upload={};open(method,url){this.method=method;this.url=url;}setRequestHeader(){}send(file){(async()=>{const r=await fetch(new URL(this.url,base),{method:this.method,headers:{Cookie:cookie,'Content-Type':file.type},body:Buffer.from(await file.arrayBuffer())});this.status=r.status;this.responseText=await r.text();this.onload();})().catch(()=>this.onerror());}};
   w.document.write(await readFile(path.join(root,'public/index.html'),'utf8'));
   const style=w.document.createElement('style');style.textContent=await readFile(path.join(root,'public/style.css'),'utf8');w.document.head.append(style);
-  w.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n'));
+  w.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n'));
   const $=s=>w.document.querySelector(s),$$=s=>[...w.document.querySelectorAll(s)];
   await until(()=>$('.works-table'),'后台加载');$('[data-nav=settings]').click();await until(()=>$('.settings-sections'),'展示设置');assert.equal($$('[data-home-video]').length,2);assert.ok($('.home-final-preview'));
   assert.equal($('.settings-nav'),null);assert.equal($('[data-settings-tab]'),null);
@@ -62,6 +63,8 @@ test('首页背景上传、排序倍速、定格帧校验、设置草稿发布�
   for(const action of ['save-settings','preview-settings']){assert.equal($$(`[data-action="${action}"]`).length,1);assert.ok($(`.settings-heading [data-action="${action}"]`));}
   const textChanges={owner:'设置页作者',role:'品牌设计师',tagline:'同页编辑网站介绍',title:'设置页测试作品集',description:'同页编辑的网站描述','contact.wechat':'unified-wechat','contact.bilibiliName':'设置页昵称','contact.emails.0':'unified@example.com','footer.text':'© 2026 噼哩画啦 · 作品集\n设计 <实验> & {{owner}}','footer.registrationText':'同页登记','footer.registrationUrl':'https://example.com/unified'};
   for(const [key,value] of Object.entries(textChanges)){const input=$(`[data-setting="${key}"]`);assert.ok(input,`${key}与背景控件同时显示`);input.value=value;input.dispatchEvent(new w.Event('input',{bubbles:true}));}
+  $('[data-action=home-bg-shade-color][data-color="#173d7a"]').click();assert.equal($('[data-home-shade-color]').value,'#173d7a');assert.equal($('[data-action=home-bg-shade-color][data-color="#173d7a"]').getAttribute('aria-pressed'),'true');
+  const color=$('[data-home-shade-color]');color.value='#abcdef';color.dispatchEvent(new w.Event('input',{bubbles:true}));assert.equal($('[data-home-shade-color]'),color,'自定义颜色不重建控件');assert.equal($('[data-home-color-value]').textContent,'#ABCDEF');
   const slider=$('[data-home-shade][type=range]'),number=$('[data-home-shade][type=number]');assert.equal(slider.value,'80');slider.value='37';slider.dispatchEvent(new w.Event('input',{bubbles:true}));assert.equal(number.value,'37');assert.equal($('[data-home-shade][type=range]'),slider,'滑动不重建控件');number.value='0';number.dispatchEvent(new w.Event('input',{bubbles:true}));assert.equal(slider.value,'0');
   assert.equal($('[data-action=home-bg-up]'),null);assert.equal($('[data-action=home-bg-down]'),null);
   assert.ok($('.home-background-note').previousElementSibling.classList.contains('home-background-list'),'说明放在媒体列表正下方');
@@ -78,22 +81,23 @@ test('首页背景上传、排序倍速、定格帧校验、设置草稿发布�
   $('[data-action=home-bg-select]').click();assert.ok($$('#dialog [data-media-asset]').some(node=>node.dataset.mediaAsset===one.id));assert.ok($$('#dialog [data-media-asset]').some(node=>node.dataset.mediaAsset===frame.id),'同一素材选择窗口包含图片和视频');$('[data-action=close-dialog]').click();
   for(const [key,value] of Object.entries(textChanges))assert.equal($(`[data-setting="${key}"]`).value,value,'调整背景后保留其它分区未保存输入');
   $('[data-action=save-settings]').click();await until(()=>app.store.get('settingsRevision')===before.settingsRevision+2,'设置保存');
-  data=await api('/api/state');assert.equal(data.settings.homeBackground.videos[0].assetId,two.id);assert.equal(data.settings.homeBackground.videos[0].playbackRate,2);assert.equal(data.settings.homeBackground.finalFrameAssetId,null);assert.equal(data.settings.homeBackground.shadeOpacity,0,'保存0%不会回退到默认80%');
+  data=await api('/api/state');assert.equal(data.settings.homeBackground.shadeColor,'#abcdef');assert.equal(data.settings.homeBackground.videos[0].assetId,two.id);assert.equal(data.settings.homeBackground.videos[0].playbackRate,2);assert.equal(data.settings.homeBackground.finalFrameAssetId,null);assert.equal(data.settings.homeBackground.shadeOpacity,0,'保存0%不会回退到默认80%');
   assert.equal(data.settings.homeBackground.videos[2].type,'image');assert.equal(data.settings.homeBackground.videos[2].duration,7);assert.ok(app.store.references(data.settings.homeBackground.videos[2].assetId).inSettings);
   const backgroundImageId=data.settings.homeBackground.videos[2].assetId;
   for(const [key,value] of Object.entries(textChanges))assert.equal(key.split('.').reduce((obj,part)=>obj[part],data.settings),value,'统一保存整页字段');
   for(const key of ['brand','titleLines','skills','appearance'])assert.deepEqual(data.settings[key],before.settings[key],'保留未显示的历史设置字段');
   for(const [key,value] of Object.entries({'tagline':'尚未保存的网站介绍','contact.wechat':'preview-wechat'})){const input=$(`[data-setting="${key}"]`);input.value=value;input.dispatchEvent(new w.Event('input',{bubbles:true}));}
   const previewShade=$('[data-home-shade][type=range]');previewShade.value='37';previewShade.dispatchEvent(new w.Event('input',{bubbles:true}));
+  const previewColor=$('[data-home-shade-color]');previewColor.value='#214d3d';previewColor.dispatchEvent(new w.Event('input',{bubbles:true}));
   $('.settings-heading [data-action=preview-settings]').click();await until(()=>$('#dialog[open] .modal-body a'),'整页未保存设置预览');
-  const previewUrl=$('#dialog .modal-body a').getAttribute('href');assert.equal((await api(previewUrl+'data/home-background.json')).shadeOpacity,37);
+  const previewUrl=$('#dialog .modal-body a').getAttribute('href');assert.equal((await api(previewUrl+'data/home-background.json')).shadeOpacity,37);assert.equal((await api(previewUrl+'data/home-background.json')).shadeColor,'#214d3d');assert.equal(app.store.get('settingsDraft').homeBackground.shadeColor,'#abcdef');
   const previewHTML=await(await fetch(base+previewUrl,{headers:{Cookie:cookie}})).text();assert.ok(previewHTML.includes('尚未保存的网站介绍'));assert.ok(previewHTML.includes('preview-wechat'));assert.equal(app.store.get('settingsDraft').homeBackground.shadeOpacity,0,'预览不覆盖已保存的蒙板设置');assert.equal(app.store.get('settingsDraft').tagline,textChanges.tagline,'预览不覆盖已保存文字');assert.equal(app.store.get('settingsDraft').contact.wechat,textChanges['contact.wechat'],'预览不覆盖已保存联系方式');
   const previewDocument=new Window();t.after(()=>previewDocument.happyDOM.abort());previewDocument.document.write(previewHTML);assert.equal(previewDocument.document.title,textChanges.title);assert.equal(previewDocument.document.querySelector('meta[name="description"]').content,textChanges.description);assert.equal(previewDocument.document.querySelector('.footer-copyright').textContent,textChanges['footer.text']);assert.equal(previewDocument.document.querySelector('.footer-copyright').children.length,0,'页脚纯文字不作为HTML或模板解析');
   $('[data-action=close-dialog]').click();
   // The exported source and deployment use public asset URLs, never private API URLs.
   await api('/api/settings','PUT',{...data.settings,revision:data.settingsRevision,homeBackground:{...data.settings.homeBackground,finalFrameAssetId:frame.id},footer:{...data.settings.footer,registrationText:'测试登记 <示例>',registrationUrl:'https://example.com/registry'}});
   const publishing=await api('/api/publish','POST',{projectIds:[],includeSettings:true},202);await until(()=>app.publisher.jobs.get(publishing.id).status!=='running','背景发布');assert.equal(app.publisher.jobs.get(publishing.id).status,'done',app.publisher.jobs.get(publishing.id).message);
-  const config=await api('/site/data/home-background.json');assert.deepEqual(config.videos.slice(0,2).map(item=>item.playbackRate),[2,.5]);assert.equal(config.videos[2].type,'image');assert.equal(config.videos[2].duration,7);assert.ok(config.videos[2].src.startsWith('assets/home/uploads/'));assert.ok(config.finalFrame.startsWith('assets/home/uploads/'));assert.equal(config.shadeOpacity,0);
+  const config=await api('/site/data/home-background.json');assert.deepEqual(config.videos.slice(0,2).map(item=>item.playbackRate),[2,.5]);assert.equal(config.videos[2].type,'image');assert.equal(config.videos[2].duration,7);assert.ok(config.videos[2].src.startsWith('assets/home/uploads/'));assert.ok(config.finalFrame.startsWith('assets/home/uploads/'));assert.equal(config.shadeOpacity,0);assert.equal(config.shadeColor,'#abcdef');
   const first=await fetch(base+'/site/'+config.videos[0].src,{headers:{Cookie:cookie,Range:'bytes=0-31'}});assert.equal(first.status,206);assert.equal(first.headers.get('Content-Type'),'video/mp4');
   const publishedImage=await fetch(base+'/site/'+config.videos[2].src,{headers:{Cookie:cookie}});assert.equal(publishedImage.status,200);assert.equal(publishedImage.headers.get('Content-Type'),'image/png');
   const html=await (await fetch(base+'/site/',{headers:{Cookie:cookie}})).text();assert.ok(html.includes('hero-bottom'));assert.equal(html.includes('creative-title.svg'),false);assert.equal(html.includes('home-brand'),false);assert.equal(html.includes('hero-video-toggle'),false);assert.ok(!html.includes('/api/media/'));assert.ok(html.includes('https://example.com/registry'));assert.ok(html.includes('测试登记 &lt;示例&gt;'));assert.equal(html.includes('contact-card'),false);

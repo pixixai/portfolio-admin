@@ -4,6 +4,7 @@ import {mkdtemp,readFile,mkdir,writeFile,readdir,access,symlink} from 'node:fs/p
 import path from 'node:path';
 import os from 'node:os';
 import {Window} from 'happy-dom';
+import {randomUUID} from 'node:crypto';
 import {createApplication,root} from '../server.mjs';
 import {Store} from '../lib/store.mjs';
 import {pruneSidebarPreviews} from '../lib/sidebar-previews.mjs';
@@ -17,7 +18,7 @@ async function fixture(t,{fakeBuild=false}={}){
   const w=new Window({url:base,settings:{disableCSSFileLoading:true,disableJavaScriptFileLoading:true,disableIframePageLoading:true}});t.after(()=>w.happyDOM.abort());const errors=[],requests=[];
   const nativeTimeout=w.setTimeout.bind(w);w.setTimeout=(fn,ms,...args)=>nativeTimeout(fn,[300,450,900,1000].includes(ms)?20:ms,...args);
   w.fetch=(url,options={})=>{if(url==='/api/preview'&&options.method==='POST')requests.push(JSON.parse(options.body));return fetch(new URL(url,base),options);};w.addEventListener('error',event=>errors.push(event.message));
-  w.document.write(await readFile(path.join(root,'public/index.html'),'utf8'));w.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','site-preview.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n'));
+  w.document.write(await readFile(path.join(root,'public/index.html'),'utf8'));w.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','site-preview.js','spaces.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n'));
   const $=selector=>w.document.querySelector(selector),click=selector=>{assert.ok($(selector),selector);$(selector).click();},input=(selector,value)=>{const node=$(selector);node.value=value;node.dispatchEvent(new w.Event('input',{bubbles:true}));};
   await until(()=>$('.works-table'),'后台加载');return{app,base,w,$,click,input,builds,requests,errors};
 }
@@ -43,7 +44,7 @@ test('循环开关联动定格帧，保存、预览、发布与可恢复部署�
 test('右侧草稿预览可折叠、切换设备，合并输入刷新且保留编辑器与已发布站点',async t=>{
   const f=await fixture(t,{fakeBuild:true}),{app,w,$,click,input,requests,errors,builds}=f,initialRelease=app.store.get('currentRelease'),initialLive=app.store.get('settingsLive');
   assert.equal($('#site-preview-panel').hidden,true);click('[data-action=toggle-site-preview]');assert.equal($('#site-preview-panel').hidden,false);assert.equal($('[data-action=toggle-site-preview]').getAttribute('aria-expanded'),'true');
-  await until(()=>$('.site-preview-frame').getAttribute('src')?.startsWith('/preview/'),'自动生成预览');const frame=$('.site-preview-frame');assert.ok($('a[href="/site/"][target="_blank"]'));assert.equal($('[data-site-preview-link]').getAttribute('href'),frame.getAttribute('src'));
+  await until(()=>$('.site-preview-frame').getAttribute('src')?.startsWith('/draft/'),'自动生成预览');const frame=$('.site-preview-frame');assert.ok($('a[href="/site/"][target="_blank"]'));assert.equal($('[data-site-preview-link]').getAttribute('href'),frame.getAttribute('src'));
   click('[data-site-preview=desktop]');assert.equal(frame.style.width,'1280px');assert.equal(frame.style.height,'800px');assert.ok(frame.style.transform.includes('scale'));click('[data-site-preview=mobile]');assert.equal(frame.style.width,'100%');
   click('[data-nav=settings]');await until(()=>$('[data-setting=owner]'),'展示设置');const count=requests.length;
   for(const value of ['新','新的','新的预览姓名'])input('[data-setting=owner]',value);
@@ -70,4 +71,25 @@ test('实时预览跳过过时结果，手动生成等待后台空闲，失败�
   input('[data-setting=owner]','需要重试的预览');await until(()=>$('#site-preview-status').textContent.includes('预览测试失败'),'失败反馈');const failedCount=requests.length;await pause(100);assert.equal(requests.length,failedCount,'输入未变化时不重复生成失败快照');
   click('[data-site-preview=refresh]');await until(()=>$('#site-preview-status').textContent==='草稿预览已更新','刷新重试成功');
   input('[data-setting=owner]','关闭期间完成');await until(()=>app.publisher.busy,'收起前任务开始');click('[data-site-preview=close]');await until(()=>!app.publisher.busy,'已启动任务完成');assert.equal($('#site-preview-panel').hidden,true);assert.equal($('.site-preview-frame').getAttribute('src'),null);assert.deepEqual(errors,[]);
+});
+
+test('统一实时预览跟随空间切换，刷新保留解锁、改码重新验证且不会越界展示当前编辑作品',async t=>{
+  const f=await fixture(t),{app,base,w,$,click,input,requests,errors}=f,originalRelease=app.store.get('currentRelease'),[a,b]=app.store.projects();
+  async function api(url,method='GET',data,status=200){const response=await fetch(base+url,{method,headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)}),result=await response.json();assert.equal(response.status,status,JSON.stringify(result));return result;}
+  await api('/api/spaces/main','PUT',{groups:[],revision:(await api('/api/state')).spaces.revision});
+  const first=await api('/api/spaces','POST',{name:'面试空间',enabled:true,code:'1357',groups:[{label:'面试分组',mode:'selected',projectIds:[a.id]}],revision:(await api('/api/state')).spaces.revision},201),spaceA=first.items[0];
+  const second=await api('/api/spaces','POST',{name:'客户空间',enabled:true,code:'2468',groups:[{label:'客户分组',mode:'selected',projectIds:[b.id]}],revision:first.revision},201),spaceB=second.items.find(space=>space.name==='客户空间');
+  await w.eval('loadState()');click('[data-nav=spaces]');await until(()=>$('.space-board'),'空间列表');click('[data-action=space-select][data-id="'+spaceA.id+'"]');await until(()=>$('[data-action=space-code]'),'空间切换');
+  click('[data-action=edit][data-id="'+a.id+'"]');await until(()=>$('.editor-overlay'),'空间作品编辑');assert.match($('[data-action=toggle-site-preview]').textContent,/实时预览/);click('[data-action=toggle-site-preview]');
+  await until(()=>$('.site-preview-frame').getAttribute('src')?.includes('/space/'+spaceA.id+'/')&&$('#site-preview-status').textContent==='草稿预览已更新','当前空间实时预览');const initialURL=$('.site-preview-frame').getAttribute('src');assert.ok(initialURL.includes('?work='+a.id));assert.equal($('[data-site-preview-scope]').value,spaceA.id);assert.match($('[data-site-preview-title]').textContent,/面试空间/);
+  let response=await fetch(base+initialURL),html=await response.text();assert.match(html,/请输入收到的访问码/);const login=new Window();login.document.write(html);const action=login.document.querySelector('form').getAttribute('action');await login.happyDOM.abort();assert.equal(new URL(action,base+initialURL).searchParams.get('work'),a.id);
+  response=await fetch(new URL(action,base+initialURL),{method:'POST',redirect:'manual',headers:{Origin:base,'Content-Type':'application/x-www-form-urlencoded'},body:'code=1357'});assert.equal(response.status,303);assert.match(response.headers.get('location'),new RegExp('work='+a.id));const cookieA=response.headers.get('set-cookie').split(';')[0],rootA=initialURL.split('?')[0];
+  response=await fetch(base+rootA+'data/projects.json',{headers:{Cookie:cookieA}});assert.deepEqual((await response.json()).map(project=>project.id),[a.id]);
+  input('[data-field=title]','刷新后仍然解锁的标题');await until(async()=>{if(requests.at(-1)?.project?.title!=='刷新后仍然解锁的标题'||$('#site-preview-status').textContent!=='草稿预览已更新')return false;const result=await fetch(base+rootA+'data/projects.json',{headers:{Cookie:cookieA}});return result.status===200&&(await result.json())[0]?.title==='刷新后仍然解锁的标题';},'刷新保留授权');assert.equal($('.site-preview-frame').getAttribute('src').split('?')[0],rootA);
+  const select=$('[data-site-preview-scope]');select.value=spaceB.id;select.dispatchEvent(new w.Event('change',{bubbles:true}));await until(()=>$('.site-preview-frame').getAttribute('src')?.includes('/space/'+spaceB.id+'/')&&$('#site-preview-status').textContent==='草稿预览已更新','手动切换客户空间');const rootB=$('.site-preview-frame').getAttribute('src').split('?')[0];assert.equal($('.site-preview-frame').getAttribute('src').includes('?work='+a.id),false,'当前编辑作品不属于客户空间时，不越界打开详情');assert.equal((await fetch(base+rootB+'data/projects.json',{headers:{Cookie:cookieA}})).status,401);
+  response=await fetch(base+rootB+'unlock',{method:'POST',redirect:'manual',headers:{Origin:base,'Content-Type':'application/x-www-form-urlencoded'},body:'code=2468'});assert.equal(response.status,303);const cookieB=response.headers.get('set-cookie').split(';')[0];response=await fetch(base+rootB+'data/projects.json',{headers:{Cookie:cookieB}});assert.deepEqual((await response.json()).map(project=>project.id),[b.id]);assert.equal((await fetch(base+rootB+'data/projects/'+a.id+'.json',{headers:{Cookie:cookieB}})).status,404);
+  select.value='public';select.dispatchEvent(new w.Event('change',{bubbles:true}));await until(()=>$('.site-preview-frame').getAttribute('src')?.match(/^\/draft\/[^/]+\/$/)&&$('#site-preview-status').textContent==='草稿预览已更新','公开范围');response=await fetch(base+$('.site-preview-frame').getAttribute('src')+'data/projects.json');assert.deepEqual(await response.json(),[],'公开预览不会因正在编辑私密作品而泄漏它');
+  select.value=spaceA.id;select.dispatchEvent(new w.Event('change',{bubbles:true}));await until(()=>$('.site-preview-frame').getAttribute('src')?.includes('/space/'+spaceA.id+'/')&&$('#site-preview-status').textContent==='草稿预览已更新','返回面试空间');assert.equal((await fetch(base+rootA+'data/projects.json',{headers:{Cookie:cookieA}})).status,200);
+  await api('/api/spaces/'+spaceA.id,'PUT',{code:'4826',revision:(await api('/api/state')).spaces.revision});await w.eval('loadState()');await until(async()=>(await fetch(base+rootA+'data/projects.json',{headers:{Cookie:cookieA}})).status===401,'新访问码使旧凭据失效');assert.equal((await fetch(base+rootB+'data/projects.json',{headers:{Cookie:cookieB}})).status,200,'其他空间凭据不受影响');
+  const built=[...app.publisher.jobs.values()].filter(job=>job.sidebar&&job.status==='done').at(-1);await api('/api/preview/sidebar','POST',{clientId:randomUUID(),previewId:built.id},403);assert.equal((await fetch(base+rootA,{headers:{Origin:'https://foreign.example'}})).status,403);assert.equal(app.store.get('currentRelease'),originalRelease);assert.deepEqual(errors,[]);
 });

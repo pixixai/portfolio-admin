@@ -14,8 +14,8 @@ let settingsBaseline = null, settingsSavePromise = null, settingsNavigating = fa
 let projectImport = null;
 let brandEditing=null,brandSaving=null;
 const homeVideoPosters = new Map();
-const labels = { works: '作品管理', media: '素材库', settings: '展示设置', releases: '发布记录', trash: '回收站' };
-const navIcons = { works: 'grid', media: 'image', settings: 'settings', releases: 'history', trash: 'trash' };
+const labels = { works: '作品管理', spaces: '分享空间', media: '素材库', settings: '展示设置', releases: '发布记录', trash: '回收站' };
+const navIcons = { works: 'grid', spaces: 'lock', media: 'image', settings: 'settings', releases: 'history', trash: 'trash' };
 const activeProjects = () => db.projects.filter(row => !row.deletedAt);
 const modified = row => !equal(row.draft, row.live);
 const assetById = id => db.media.find(asset => asset.id === id);
@@ -77,16 +77,17 @@ function render() {
   const editorScroll = $('.editor-scroll')?.scrollTop || 0; closeBlockMenu();
   window.PortfolioRichText?.destroyAll();
   const active = activeProjects(), published = active.filter(row => row.live).length;
-  $('#app').innerHTML = `<div class="layout"><aside class="sidebar"><div class="brand"><span class="brand-mark"></span><div><div data-brand-container>${renderBrandName()}</div><small>作品管理</small></div></div><p class="nav-heading">创作空间</p><nav class="nav" aria-label="管理导航">${Object.entries(labels).map(([key, label]) => `<button data-nav="${key}" class="${view === key ? 'active' : ''}" ${view === key ? 'aria-current="page"' : ''}>${icon(navIcons[key])}<span class="nav-label">${label}</span>${key === 'works' || key === 'trash' ? `<span class="badge">${key === 'works' ? active.length : db.projects.filter(row => row.deletedAt).length}</span>` : ''}</button>`).join('')}</nav><div class="sidebar-bottom"><div class="workspace-note"><strong>每一次创意，都值得被看见</strong>编辑、预览，再从容发布。<br>让作品持续生长。</div></div></aside><main class="main"><header class="topbar"><div class="crumb">创作空间 <span>/</span><span>${labels[view]}</span></div><div class="top-actions"><span class="site-status"><i class="dot"></i>${published} 个作品已发布</span>${btn('查看站点','toggle-site-preview','','eye')}<a class="icon-btn" href="/site/" target="_blank" rel="noopener" aria-label="新标签查看已发布站点" title="新标签查看已发布站点">${icon('external')}</a>${btn('导入项目', 'import-dialog', '', 'folder', 'data-job-action')}${btn('发布与导出', 'publish-dialog', 'primary', 'upload', 'data-job-action')}</div></header><section class="page" id="page">${renderMain()}</section></main></div>${editor ? renderEditorLayer() : ''}`;
-  updateBusy(); syncEditorLayer(editorScroll); prepareHomeVideoPreviews(); syncSettingsSaveButton(); window.PortfolioSitePreview?.sync();
+  $('#app').innerHTML = `<div class="layout"><aside class="sidebar"><div class="brand"><span class="brand-mark"></span><div><div data-brand-container>${renderBrandName()}</div><small>作品管理</small></div></div><p class="nav-heading">创作空间</p><nav class="nav" aria-label="管理导航">${Object.entries(labels).map(([key, label]) => `<button data-nav="${key}" class="${view === key ? 'active' : ''}" ${view === key ? 'aria-current="page"' : ''}>${icon(navIcons[key])}<span class="nav-label">${label}</span>${key === 'works' || key === 'trash' ? `<span class="badge">${key === 'works' ? active.length : db.projects.filter(row => row.deletedAt).length}</span>` : ''}</button>`).join('')}</nav><div class="sidebar-bottom"><div class="workspace-note"><strong>每一次创意，都值得被看见</strong>编辑、预览，再从容发布。<br>让作品持续生长。</div></div></aside><main class="main"><header class="topbar"><div class="crumb">创作空间 <span>/</span><span>${labels[view]}</span></div><div class="top-actions"><span class="site-status"><i class="dot"></i>${published} 个作品已发布</span>${btn('实时预览','toggle-site-preview','','eye')}<a class="icon-btn" href="/site/" target="_blank" rel="noopener" aria-label="新标签查看已发布站点" title="新标签查看已发布站点">${icon('external')}</a>${btn('备份数据','backup-data','','download','data-job-action')}${btn('恢复数据','restore-data','','folder','data-job-action')}${btn('发布', 'publish-dialog', 'primary', 'upload', 'data-job-action')}</div></header><section class="page" id="page">${renderMain()}</section></main></div>${editor ? renderEditorLayer() : ''}`;
+  updateBusy(); syncEditorLayer(editorScroll); prepareHomeVideoPreviews(); syncSettingsSaveButton(); if(view==='spaces')syncSpaceBoard(); window.PortfolioSitePreview?.sync();
 }
 function renderMain() {
   if (view === 'works' || view === 'trash') return renderWorks();
+  if (view === 'spaces') return renderSpaces();
   if (view === 'media') return renderMedia();
   if (view === 'settings') return renderSettings();
   return renderReleases();
 }
-function heading(title, subtitle, actions = '') { return `<div class="page-heading"><div><h1>${title}</h1><p>${subtitle}</p></div><div class="heading-actions">${actions}</div></div>`; }
+function heading(title, subtitle, actions = '') { return `<div class="page-heading"><h1>${title}</h1><div class="heading-actions">${actions}</div></div>`; }
 function filteredProjects() { return db.projects.filter(row => (view === 'trash' ? row.deletedAt : !row.deletedAt) && (!query || `${row.draft.title} ${row.draft.tags.join(' ')}`.toLowerCase().includes(query.toLowerCase())) && (!category || projectLabels(row.draft).includes(category)) && (status === 'all' || status === 'published' && row.live || status === 'draft' && !row.live || status === 'changed' && row.live && modified(row))); }
 function workCounts() {
   const rows = activeProjects();
@@ -97,12 +98,12 @@ function renderWorkTabs() {
   return tabs.map(([key, label]) => `<button data-status="${key}" class="${status === key ? 'active' : ''}" aria-pressed="${status === key}">${label}·${String(view === 'trash' ? db.projects.filter(row => row.deletedAt).length : counts[key]).padStart(2, '0')}</button>`).join('');
 }
 function renderWorks() {
-  return heading(view === 'trash' ? '回收站' : '作品管理', view === 'trash' ? '暂时收起的作品，可以在这里重新找回。' : '把灵感整理成作品，让每一次表达都有迹可循。', view === 'works' ? btn('新建作品', 'new', 'primary', 'plus') : '') +
-    (view === 'works' ? renderCategories() : '') + `<div class="content-card"><div class="list-toolbar"><div class="tabs">${renderWorkTabs()}</div><span class="toolbar-spacer"></span><label class="search">${icon('search')}<input id="works-search" value="${esc(query)}" placeholder="搜索作品名称、标签" aria-label="搜索作品"></label><div class="segmented"><button data-view="list" class="${!cardView ? 'active' : ''}" aria-label="列表视图">${icon('list')}</button><button data-view="cards" class="${cardView ? 'active' : ''}" aria-label="封面视图">${icon('grid')}</button></div></div><div id="works-results">${renderWorksResults()}</div></div>`;
+  return heading(view === 'trash' ? '回收站' : '作品管理', view === 'trash' ? '暂时收起的作品，可以在这里重新找回。' : '把灵感整理成作品，让每一次表达都有迹可循。', view === 'works' ? `<label class="search works-page-search">${icon('search')}<input id="works-search" value="${esc(query)}" placeholder="搜索作品名称、标签" aria-label="搜索作品"></label>` : '') +
+    (view === 'works' ? renderCategories() : '') + `<div class="content-card"><div class="list-toolbar"><div class="tabs">${renderWorkTabs()}</div><span class="toolbar-spacer"></span>${view === 'works' ? btn('新建作品','new','small','plus') : ''}<div class="segmented"><button data-view="list" class="${!cardView ? 'active' : ''}" aria-label="列表视图">${icon('list')}</button><button data-view="cards" class="${cardView ? 'active' : ''}" aria-label="封面视图">${icon('grid')}</button></div></div><div id="works-results">${renderWorksResults()}</div></div>`;
 }
 function renderWorkCard(row) {
   const asset = coverFor(row.draft);
-  return `<article class="work-card ${selected.has(row.id) ? 'is-selected' : ''}" data-row="${row.id}" draggable="true" aria-label="${esc(row.draft.title)}，拖动封面排序"><div class="work-card-cover">${asset ? `<img draggable="false" src="${asset.url}" style="${cropStyle(row.draft.coverCrop)}" alt="${esc(row.draft.title)}" loading="lazy">` : `<div class="work-card-placeholder">${icon('image')}<span>暂无封面</span></div>`}</div><div class="work-card-shade" aria-hidden="true"></div><label class="work-card-select" title="选择作品"><input type="checkbox" data-select="${row.id}" ${selected.has(row.id) ? 'checked' : ''} aria-label="选择 ${esc(row.draft.title)}"></label><button class="work-card-edit icon-btn" data-action="edit" data-id="${row.id}" aria-label="编辑 ${esc(row.draft.title)}" title="编辑作品">${icon('edit')}</button><div class="work-card-caption"><span class="work-card-labels">${esc(projectLabels(row.draft).join(' · ') || '未标记')}</span><strong class="work-card-title">${esc(row.draft.title)}</strong></div><div class="work-card-state">${cardBadge(row)}</div></article>`;
+  return `<article class="work-card ${selected.has(row.id) ? 'is-selected' : ''}" data-row="${row.id}" draggable="true" aria-label="${esc(row.draft.title)}，拖动封面排序"><div class="work-card-cover">${asset ? `<img draggable="false" src="${asset.url}" style="${cropStyle(row.draft.coverCrop)}" alt="${esc(row.draft.title)}" loading="lazy">` : `<div class="work-card-placeholder">${icon('image')}<span>暂无封面</span></div>`}</div><div class="work-card-shade" aria-hidden="true"></div><label class="work-card-select" title="选择作品"><input type="checkbox" data-select="${row.id}" ${selected.has(row.id) ? 'checked' : ''} aria-label="选择 ${esc(row.draft.title)}"></label><button class="work-card-edit icon-btn" data-action="edit" data-id="${row.id}" aria-label="编辑 ${esc(row.draft.title)}" title="编辑作品">${icon('edit')}</button><div class="work-card-caption"><span class="work-card-labels">${esc(projectLabels(row.draft).join(' · ') || '未标记')}</span><strong class="work-card-title">${esc(row.draft.title)}${privacyBadge(row.draft)}</strong></div><div class="work-card-state">${cardBadge(row)}</div></article>`;
 }
 function projectMenu(row) { return `<details class="menu"><summary class="icon-btn" aria-label="更多操作">${icon('more')}</summary><div class="menu-pop">${[['project-preview', 'eye', '预览'], ['duplicate', 'copy', '复制作品'], ['move-up', 'up', '上移'], ['move-down', 'down', '下移'], ...(row.live ? [['unpublish', 'history', '下架']] : []), ['trash', 'trash', '移入回收站']].map(([action, name, label]) => `<button data-action="${action}" data-id="${row.id}" class="${action === 'trash' ? 'danger' : ''}">${icon(name)}${label}</button>`).join('')}</div></details>`; }
 function renderWorksResults() {
@@ -112,7 +113,7 @@ function renderWorksResults() {
   if (cardView && view !== 'trash') return batch + `<div class="work-cards ${selected.size ? 'is-selecting' : ''}">${rows.map(renderWorkCard).join('')}</div><div class="table-footer"><span>共 ${rows.length} 件作品</span><span>拖动封面可调整作品顺序</span></div>`;
   return batch + `<div class="table-scroll"><table class="works-table"><thead><tr><th class="check-cell">${view === 'works' ? '<input type="checkbox" id="select-all" aria-label="全选当前结果" '+ (rows.every(row => selected.has(row.id)) ? 'checked' : '') +'>' : ''}</th><th>作品名称</th><th class="hide-mobile">标签</th><th>状态</th><th class="hide-mobile">图片</th><th class="hide-mobile">最近编辑</th><th>操作</th></tr></thead><tbody>${rows.map(row => {
     const asset = coverFor(row.draft);
-    return `<tr data-row="${row.id}" ${view === 'works' ? 'draggable="true"' : ''}><td class="check-cell">${view === 'works' ? `<input type="checkbox" data-select="${row.id}" ${selected.has(row.id) ? 'checked' : ''} aria-label="选择 ${esc(row.draft.title)}">` : ''}</td><td><div class="work-name">${view === 'works' ? `<span class="drag-handle" draggable="true" data-work-handle title="拖动排序">${icon('drag')}</span>` : ''}${asset ? `<img draggable="false" class="work-thumb" src="${asset.url}" alt="" loading="lazy">` : '<span class="work-thumb"></span>'}<div><div class="work-title">${esc(row.draft.title)}</div><div class="work-meta">${esc(row.draft.tags.join(' · ') || '还没有添加标签')}</div></div></div></td><td class="hide-mobile"><span class="category-pill">${esc(projectLabels(row.draft).join(' · ') || '未标记')}</span></td><td>${view === 'trash' ? '<span class="status draft">已移除</span>' : badge(row)}</td><td class="hide-mobile">${row.draft.blocks.filter(block => block.type === 'image').length} 张</td><td class="hide-mobile">${shortDate(row.updatedAt)}</td><td><div class="row-actions">${view === 'trash' ? `${btn('恢复', 'restore', 'small', '', `data-id="${row.id}"`)}<button class="icon-btn danger" data-action="delete-project" data-id="${row.id}" title="永久删除">${icon('trash')}</button>` : `<button class="icon-btn" data-action="edit" data-id="${row.id}" title="编辑作品">${icon('edit')}</button>${projectMenu(row)}`}</div></td></tr>`;
+    return `<tr data-row="${row.id}" ${view === 'works' ? 'draggable="true"' : ''}><td class="check-cell">${view === 'works' ? `<input type="checkbox" data-select="${row.id}" ${selected.has(row.id) ? 'checked' : ''} aria-label="选择 ${esc(row.draft.title)}">` : ''}</td><td><div class="work-name">${view === 'works' ? `<span class="drag-handle" draggable="true" data-work-handle title="拖动排序">${icon('drag')}</span>` : ''}${asset ? `<img draggable="false" class="work-thumb" src="${asset.url}" alt="" loading="lazy">` : '<span class="work-thumb"></span>'}<div><div class="work-title">${esc(row.draft.title)}${privacyBadge(row.draft)}</div><div class="work-meta">${esc(row.draft.tags.join(' · ') || '还没有添加标签')}</div></div></div></td><td class="hide-mobile"><span class="category-pill">${esc(projectLabels(row.draft).join(' · ') || '未标记')}</span></td><td>${view === 'trash' ? '<span class="status draft">已移除</span>' : badge(row)}</td><td class="hide-mobile">${row.draft.blocks.filter(block => block.type === 'image').length} 张</td><td class="hide-mobile">${shortDate(row.updatedAt)}</td><td><div class="row-actions">${view === 'trash' ? `${btn('恢复', 'restore', 'small', '', `data-id="${row.id}"`)}<button class="icon-btn danger" data-action="delete-project" data-id="${row.id}" title="永久删除">${icon('trash')}</button>` : `<button class="icon-btn" data-action="edit" data-id="${row.id}" title="编辑作品">${icon('edit')}</button>${projectMenu(row)}`}</div></td></tr>`;
   }).join('')}</tbody></table></div><div class="table-footer"><span>共 ${rows.length} 件作品${category ? ` · ${esc(category)}` : ''}</span><span>${view === 'trash' ? '恢复后保留为草稿' : '拖动作品可调整顺序 · 排序发布后生效'}</span></div>`;
 }
 
@@ -131,7 +132,7 @@ function prepareSettings(value) {
   result.footer.registrationText ??= '';result.footer.registrationUrl ??= '';
   result.footer.text ??= `© ${result.year} ${result.owner} · 作品集`;
   result.homeBackground ||= {videos:[{assetId:null,playbackRate:1}],finalFrameAssetId:null};
-  result.homeBackground.shadeOpacity ??= 80;result.homeBackground.loop ??= true;return result;
+  result.homeBackground.shadeOpacity ??= 80;result.homeBackground.shadeColor ??= '#000000';result.homeBackground.loop ??= true;return result;
 }
 function comparableSettings(value) {
   const normalize=item=>typeof item==='string'?item.trim():Array.isArray(item)?item.map(normalize):item&&typeof item==='object'?Object.fromEntries(Object.entries(item).map(([key,entry])=>[key,normalize(entry)])):item;
@@ -172,6 +173,10 @@ function prepareHomeVideoPreviews() {
     video.addEventListener('loadeddata',capture,{once:true});video.addEventListener('error',failed,{once:true});if(video.readyState>=2)capture();
   });
 }
+function renderHomeShadeSettings(background) {
+  const colors=[['黑色','#000000'],['白色','#ffffff'],['灰色','#64748b'],['蓝色','#173d7a'],['紫色','#4c1d5b'],['绿色','#214d3d'],['棕色','#5a3526']];
+  return `<div class="home-shade-control"><span class="home-shade-label">蒙板颜色</span><div class="home-shade-colors" role="group" aria-label="蒙板颜色">${colors.map(([label,color])=>`<button type="button" class="home-shade-swatch" data-action="home-bg-shade-color" data-color="${color}" style="--swatch:${color}" title="${label}" aria-label="${label}蒙板" aria-pressed="${background.shadeColor===color}"><span aria-hidden="true"></span></button>`).join('')}<label class="home-shade-custom">自定义<input type="color" data-home-shade-color value="${esc(background.shadeColor)}" aria-label="自定义蒙板颜色"></label><output data-home-color-value>${esc(background.shadeColor.toUpperCase())}</output></div><label for="home-shade-range">蒙板不透明度</label><div class="home-shade-inputs"><input id="home-shade-range" type="range" min="0" max="100" step="1" data-home-shade value="${background.shadeOpacity}" aria-label="蒙板不透明度滑块" aria-valuetext="${background.shadeOpacity}% 不透明"><label><input type="number" min="0" max="100" step="1" data-home-shade value="${background.shadeOpacity}" aria-label="蒙板不透明度数值"><span>%</span></label></div><p>0% 无蒙板，100% 完全覆盖背景。默认黑色、80%，不影响文字和按钮。</p></div>`;
+}
 function renderHomeBackgroundSettings() {
   const background=settingsLocal.homeBackground, frame=assetById(background.finalFrameAssetId);
   const rows=background.videos.map((item,index)=>{
@@ -179,12 +184,13 @@ function renderHomeBackgroundSettings() {
     const preview=image?`<img src="${esc(asset.url)}" alt="${esc(asset.name)}" draggable="false">`:renderHomeVideoPreview(asset);
     return `<article class="home-video-item" data-home-video="${index}"><button type="button" class="home-media-handle" data-home-drag="${index}" title="拖动排序，也可用上下方向键调整" aria-label="拖动第${index+1}项背景媒体排序">${icon('drag')}<span class="home-media-position" aria-hidden="true">${String(index+1).padStart(2,'0')}</span></button><div class="home-video-preview">${preview}${asset?`<button class="home-reveal-asset" type="button" data-action="home-reveal-asset" data-id="${asset.id}" title="在素材库显示">在素材库显示</button>`:''}</div><strong class="home-media-name" title="${esc(asset?.name||'默认首页背景.mp4')}">${esc(asset?.name||'默认首页背景.mp4')}</strong><label class="home-media-setting">${image?'停留时长':'播放速度'}<span><input type="number" min="${image?1:.25}" max="${image?120:4}" step="${image?1:.25}" data-setting="homeBackground.videos.${index}.${image?'duration':'playbackRate'}" value="${image?item.duration??5:item.playbackRate}" aria-label="${image?'图片'+(index+1)+'停留秒数':'视频'+(index+1)+'播放速度'}">${image?'秒':'倍'}</span></label>${btn('移除','home-bg-remove','small text','trash',`data-index="${index}"`)}</article>`;
   }).join('');
-  return `<h2 id="settings-background-title">首页背景</h2><p>图片与视频按列表顺序播放；可开启循环。单击首页空白处可暂停或继续。</p><div class="home-shade-control"><label for="home-shade-range">黑色蒙板不透明度</label><div class="home-shade-inputs"><input id="home-shade-range" type="range" min="0" max="100" step="1" data-home-shade value="${background.shadeOpacity}" aria-label="黑色蒙板不透明度滑块" aria-valuetext="${background.shadeOpacity}% 不透明"><label><input type="number" min="0" max="100" step="1" data-home-shade value="${background.shadeOpacity}" aria-label="黑色蒙板不透明度数值"><span>%</span></label></div><p>0% 无蒙板，100% 纯黑，默认80%。不影响文字和按钮。</p></div><div class="home-background-actions">${btn('上传媒体','home-bg-upload','','upload')}${btn('从素材库选择','home-bg-select','','image')}${btn('添加默认视频','home-bg-default','small text')}<button type="button" role="switch" class="first-image-switch home-loop-switch" data-action="home-bg-loop" aria-checked="${background.loop}" aria-controls="home-final-settings"><span class="switch-track" aria-hidden="true"></span><span>循环播放</span></button></div><div class="home-background-list">${rows||'<p class="inline-note">尚未添加媒体。发布后将仅显示静态背景或结束定格图。</p>'}</div><p class="inline-note blue home-background-note">拖动左侧手柄排序。视频速度0.25～4倍，图片默认停留5秒（可设1～120秒），最多30项媒体。保存设置后，发布网站时勾选「同时发布网站设置」。</p><section id="home-final-settings" ${background.loop?'hidden':''}><hr class="settings-divider"><h3>结束定格帧</h3><p>所有媒体展示结束后显示此图片。不设置时，自动保留最后一项画面。</p>${frame?`<img class="home-final-preview" src="${frame.url}" alt="结束定格帧">`:''}<div class="home-background-actions">${btn('上传定格图','home-bg-frame-upload','','upload')}${btn(frame?'更换定格图':'选择定格图','home-bg-frame-select','','image')}${frame?btn('移除定格图','home-bg-frame-clear','small text','trash'):''}</div></section>`;
+  return `<h2 id="settings-background-title">首页背景</h2><p>图片与视频按列表顺序播放；可开启循环。单击首页空白处可暂停或继续。</p>${renderHomeShadeSettings(background)}<div class="home-background-actions">${btn('上传媒体','home-bg-upload','','upload')}${btn('从素材库选择','home-bg-select','','image')}${btn('添加默认视频','home-bg-default','small text')}<button type="button" role="switch" class="first-image-switch home-loop-switch" data-action="home-bg-loop" aria-checked="${background.loop}" aria-controls="home-final-settings"><span class="switch-track" aria-hidden="true"></span><span>循环播放</span></button></div><div class="home-background-list">${rows||'<p class="inline-note">尚未添加媒体。发布后将仅显示静态背景或结束定格图。</p>'}</div><p class="inline-note blue home-background-note">拖动左侧手柄排序。视频速度0.25～4倍，图片默认停留5秒（可设1～120秒），最多30项媒体。保存设置后，发布网站时勾选「同时发布网站设置」。</p><section id="home-final-settings" ${background.loop?'hidden':''}><hr class="settings-divider"><h3>结束定格帧</h3><p>所有媒体展示结束后显示此图片。不设置时，自动保留最后一项画面。</p>${frame?`<img class="home-final-preview" src="${frame.url}" alt="结束定格帧">`:''}<div class="home-background-actions">${btn('上传定格图','home-bg-frame-upload','','upload')}${btn(frame?'更换定格图':'选择定格图','home-bg-frame-select','','image')}${frame?btn('移除定格图','home-bg-frame-clear','small text','trash'):''}</div></section>`;
 }
 async function homeBackgroundAction(name,element) {
   const background=settingsLocal.homeBackground;
   const update=()=>{refreshSettingsDirty();render();};
   const add=assets=>{if(background.videos.length+assets.length>30)throw new Error('首页背景最多支持30项媒体。');background.videos.push(...assets.map(asset=>asset.mime.startsWith('image/')?{assetId:asset.id,type:'image',duration:5}:{assetId:asset.id,playbackRate:1}));update();};
+  if(name==='home-bg-shade-color'){background.shadeColor=element.dataset.color;return update();}
   if(name==='home-bg-loop'){background.loop=!background.loop;return update();}
   if(name==='home-bg-upload')return chooseFiles(async files=>add(await uploadFiles(files,{kind:'background'})),'background');
   if(name==='home-bg-select')return openMediaPicker(true,add,'background');
@@ -251,14 +257,14 @@ document.addEventListener('keydown',event=>{
   event.preventDefault();const from=Number(handle.dataset.homeDrag),to=from+(event.key==='ArrowUp'?-1:1);if(to>=0&&to<settingsLocal.homeBackground.videos.length)moveHomeMedia(from,to);
 });
 function renderReleases() {
-  return heading('发布记录', '保留近期版本，方便查看、导出与恢复。', `<label class="release-retention-control"><span>自动保留</span><select id="release-retention" aria-label="发布记录保留数量" data-job-action>${[5,10].map(keep=>`<option value="${keep}" ${(db.releaseRetention??10)===keep?'selected':''}>最近${keep}条</option>`).join('')}</select></label>${btn('发布与导出', 'publish-dialog', 'primary', 'upload', 'data-job-action')}`) + `<div class="release-notice"><strong>发布到独立展示副本</strong><br>这里的发布会更新“查看站点”中的页面。正式托管站点可使用下方“部署包”上传更新；原作品集文件夹不会被修改。<p class="release-retention-note">保留数量包含当前版本；每次发布成功后自动清理，调整数量会立即清理。较早版本的记录、源文件及部署副本删除后无法查看、下载或恢复，作品草稿与素材库保留。此设置仅清理本机发布历史，云平台部署历史需单独管理。</p></div>${db.jobs.filter(job => job.status === 'failed').slice(0, 3).map(job => `<details class="job-failed"><summary>${esc(job.title)}未完成 · ${shortDate(job.createdAt)}</summary><pre>${esc(job.message)}</pre></details>`).join('')}<div class="content-card release-list">${db.releases.map(release => `<article class="release-item"><span class="release-icon">${icon('history')}</span><div class="release-info"><div class="release-title">${esc(release.title)}${db.currentRelease === release.id ? '<span class="status">当前版本</span>' : ''}</div><p class="release-meta">${shortDate(release.createdAt)} · ${release.count} 个作品 · ${esc(release.id.split('-').slice(-1)[0])}</p></div><div class="release-actions"><a class="btn small" href="/history/${release.id}/" target="_blank" rel="noopener">${icon('eye')}查看</a>${btn('部署包','export-release','small','download',`data-id="${release.id}"`)}<a class="btn small" href="/api/export/${release.id}?kind=source">${icon('folder')}源文件</a>${db.currentRelease !== release.id ? btn('恢复此版本', 'rollback', 'small', 'history', `data-id="${release.id}" data-job-action`) : ''}</div></article>`).join('')}</div>`;
+  return heading('发布记录', '保留近期版本，方便查看、导出与恢复。', `<label class="release-retention-control"><span>自动保留</span><select id="release-retention" aria-label="发布记录保留数量" data-job-action>${[5,10].map(keep=>`<option value="${keep}" ${(db.releaseRetention??10)===keep?'selected':''}>最近${keep}条</option>`).join('')}</select></label>${btn('发布', 'publish-dialog', 'primary', 'upload', 'data-job-action')}`) + `<div class="release-notice"><strong>发布到独立展示副本</strong><br>这里的发布会更新本机“已发布站点”中的页面。正式托管站点可使用下方“部署包”上传更新；原作品集文件夹不会被修改。<p class="release-retention-note">保留数量包含当前版本；每次发布成功后自动清理，调整数量会立即清理。较早版本的记录、源文件及部署副本删除后无法查看、下载或恢复，作品草稿与素材库保留。此设置仅清理本机发布历史，云平台部署历史需单独管理。</p></div>${db.jobs.filter(job => job.status === 'failed').slice(0, 3).map(job => `<details class="job-failed"><summary>${esc(job.title)}未完成 · ${shortDate(job.createdAt)}</summary><pre>${esc(job.message)}</pre></details>`).join('')}<div class="content-card release-list">${db.releases.map(release => `<article class="release-item"><span class="release-icon">${icon('history')}</span><div class="release-info"><div class="release-title">${esc(release.title)}${db.currentRelease === release.id ? '<span class="status">当前版本</span>' : ''}</div><p class="release-meta">${shortDate(release.createdAt)} · ${release.count} 个作品 · ${esc(release.id.split('-').slice(-1)[0])}</p></div><div class="release-actions"><a class="btn small" href="/history/${release.id}/" target="_blank" rel="noopener">${icon('eye')}查看</a>${btn('部署包','export-release','small','download',`data-id="${release.id}"`)}<a class="btn small" href="/api/export/${release.id}?kind=source">${icon('folder')}源文件</a>${db.currentRelease !== release.id ? btn('恢复此版本', 'rollback', 'small', 'history', `data-id="${release.id}" data-job-action`) : ''}</div></article>`).join('')}</div>`;
 }
 async function saveReleaseRetention(keep) {
   busy=true;updateBusy();
   try{const result=await api('/api/release-retention','PUT',{keep});await loadState(false);toast(result.pending?'保留数量已保存，部分旧文件将在后续重试清理':`已设为保留最近${keep}条，清理了${result.removed.length}条较早记录`);}
   catch(error){toast(error.message,true);}finally{busy=false;render();}
 }
-function openDialog(content, wide = false) { const dialog = $('#dialog'); dialog.classList.toggle('wide', wide); $('#dialog-content').innerHTML = content; if (!dialog.open) dialog.showModal(); }
+function openDialog(content, wide = false) { const dialog = $('#dialog'); dialog.classList.remove('space-settings-dialog'); dialog.classList.toggle('wide', wide); $('#dialog-content').innerHTML = content; if (!dialog.open) dialog.showModal(); }
 function closeDialog() {
   if(projectImport?.committing)return;
   if(projectImport?.token)api('/api/import/'+projectImport.token,'DELETE').catch(()=>{});
@@ -375,12 +381,13 @@ async function saveProject(silent = false) {
   savePromise = api(`/api/projects/${id}`, 'PUT', payload);
   try {
     const row = await savePromise;
-    if (editor?.id === id) { editor.revision = row.revision; if (version === editVersion) dirty = false; }
+    if (editor?.id === id) { editor.revision = row.revision; if (version === editVersion) {dirty = false;if(row.draft.visibility&&editor.visibility!==row.draft.visibility){editor.visibility=row.draft.visibility;const node=$('.document-privacy');if(node)node.outerHTML=renderDocumentPrivacy();}} }
     const index = db.projects.findIndex(project => project.id === id); if (index >= 0) db.projects[index] = row;
-    updateSaveState();
+    updateDocumentSpaces();updateSaveState();
   } finally { savePromise = null; }
 }
 async function navigate(next) {
+  if(typeof spaceHasPending==='function'&&spaceHasPending())await flushSpaceChanges();
   if(brandSaving)await brandSaving;
   if(settingsNavigating)return false;
   if(next===view&&!editor)return true;
@@ -430,7 +437,8 @@ async function followJob(job, callback) {
 async function previewProject(id) {
   if (editor?.id === id) await saveProject(true);
   const version = editVersion;
-  const job = await api('/api/preview', 'POST', {});
+  const document=id?db.projects.find(row=>row.id===id)?.draft:null;
+  const job = await api('/api/preview', 'POST', document?{project:document}:{});
   await followJob(job, result => {
     const url = result.url + (id ? `?work=${encodeURIComponent(id)}` : '');
     if (editor) { previewUrl = url; previewVersion = version; }
@@ -450,7 +458,7 @@ function openExportDialog(id){
 function openPublishDialog(ids) {
   const candidates = activeProjects(), chosen = new Set(ids || candidates.filter(row => row.live && modified(row)).map(row => row.id));
   const settingsChanged = !equal(db.settings, db.settingsLive);
-  openDialog(`${modalHead('发布与导出', '只发布勾选的作品草稿，其他已发布内容保留原样。')}<form id="publish-form"><div class="modal-body">${renderDeploymentFields()}<p class="inline-note blue">本次将更新独立展示副本。完成后下载部署包，上传到托管平台。新版部署包也可导回后台，恢复本次已发布内容；包内的编辑数据随网站公开，不含未发布草稿。</p>${candidates.map(row => { const asset = coverFor(row.draft); return `<label class="publish-row"><input type="checkbox" name="project" value="${row.id}" ${chosen.has(row.id) ? 'checked' : ''}>${asset ? `<img src="${asset.url}" alt="">` : ''}<span>${esc(row.draft.title)}</span>${badge(row)}</label>`; }).join('')}<label class="publish-setting"><input type="checkbox" name="settings" ${settingsChanged ? 'checked' : ''}>同时发布网站设置${settingsChanged ? '（有修改）' : ''}</label><div class="form-error" id="publish-error" hidden></div></div><footer class="modal-foot">${btn('取消', 'close-dialog')}<button class="btn primary" type="submit" ${db.capabilities?.platformExport?'':'disabled'}>${icon('upload')}确认发布</button></footer></form>`);
+  openDialog(`${modalHead('发布', '只发布勾选的作品草稿，其他已发布内容保留原样。')}<form id="publish-form"><div class="modal-body"><p class="inline-note blue">发布到网站展示副本，完成后可部署到已配置的服务器。静态部署包包含主站和已启用的公开空间。私密空间通过服务器访问服务提供。</p>${db.spaces?.changed||candidates.some(row=>row.draft.visibility!==row.live?.visibility)?'<p class="inline-note">本次同时更新主站及各分享空间的作品选择、分组和访问设置。</p>':''}${candidates.map(row => { const asset = coverFor(row.draft); return `<label class="publish-row"><input type="checkbox" name="project" value="${row.id}" ${chosen.has(row.id) ? 'checked' : ''}>${asset ? `<img src="${asset.url}" alt="">` : ''}<span>${esc(row.draft.title)}</span>${badge(row)}</label>`; }).join('')}<label class="publish-setting"><input type="checkbox" name="settings" ${settingsChanged ? 'checked' : ''}>同时发布网站设置${settingsChanged ? '（有修改）' : ''}</label><div class="form-error" id="publish-error" hidden></div></div><footer class="modal-foot">${btn('取消', 'close-dialog')}${btn('服务器设置','space-server-settings','','settings')}${btn('部署已发布网站','remote-sync')}<button class="btn primary" type="submit" ${db.capabilities?.platformExport?'':'disabled'}>${icon('upload')}确认发布</button></footer></form>`);
 }
 async function reorder(id, targetId) { const rows = activeProjects(), ids = rows.map(row => row.id), old = ids.indexOf(id), target = ids.indexOf(targetId); if (old < 0 || target < 0 || old === target) return; ids.splice(old, 1); ids.splice(target, 0, id); await api('/api/reorder', 'POST', { ids }); await loadState(); toast('顺序已保存，发布后生效'); }
 async function projectAction(action, id) {
@@ -485,6 +493,8 @@ async function saveSettings() {
 async function action(name, element) {
   if(brandSaving)await brandSaving;
   const id = element.dataset.id;
+  if (name.startsWith('space-')) return spaceAction(name,element);
+  if(['publish-dialog','publish-selected','publish-editor','backup-data','restore-data','edit','new'].includes(name)&&typeof spaceHasPending==='function'&&spaceHasPending())await flushSpaceChanges();
   if (name.startsWith('home-bg-')) return homeBackgroundAction(name,element);
   if (documentActions.has(name)) return documentAction(name, element);
   if (name === 'toggle-site-preview') return window.PortfolioSitePreview?.toggle();
@@ -499,9 +509,19 @@ async function action(name, element) {
   if (name === 'back' || name === 'close-editor') return closeEditor();
   if (name === 'save') return saveProject();
   if (name === 'clear-selection') { selected.clear(); return render(); }
+  if(name==='backup-data'||name==='restore-data'){
+    if(!db.capabilities?.userBackup||!window.PortfolioUserBackup)throw new Error('请重启后台并刷新页面，加载数据备份功能。');
+    if(brandSaving)await brandSaving;if(editor&&dirty)await saveProject(true);if(settingsDirty)await saveSettings();
+    if(name==='restore-data'&&!await navigate('works'))return;
+    return window.PortfolioUserBackup.open({mode:name==='restore-data'?'restore':'backup',api,esc,openDialog,modalHead,btn,
+      beforeWork:async()=>{const release=await window.PortfolioSitePreview?.beforeRequest('/api/preview','POST');busy=true;updateBusy();return()=>{busy=false;release?.();render();};},
+      onRestored:async()=>{window.PortfolioSitePreview?.invalidate();editor=null;dirty=false;view='works';query='';category='';status='all';selected.clear();settingsLocal=null;settingsBaseline=null;settingsDirty=false;previewUrl='';await loadState();closeDialog();toast('所选用户数据已恢复');}
+    });
+  }
   if (name === 'import-dialog') { if(window.PortfolioSitePreview){const release=await window.PortfolioSitePreview.beforeRequest('/api/import/commit','POST');release?.();}if(busy||!await navigate('works'))return;projectImport={};return renderProjectImport(); }
   if (name === 'import-choose') return chooseProjectPackage();
   if (name === 'import-confirm') return commitProjectImport();
+  if(name==='remote-sync'){if(!db.capabilities?.remoteSync||!window.PortfolioRemoteSync)throw new Error('请重启后台并刷新页面，加载增量部署功能。');return window.PortfolioRemoteSync.open({api,esc,openDialog,modalHead,btn,sizeLabel,releaseId:id||db.currentRelease});}
   if (name === 'export-release') return openExportDialog(id);
   if (name === 'publish-dialog') { if (editor && dirty) await saveProject(true); if (settingsDirty) await saveSettings(); return openPublishDialog(); }
   if (name === 'publish-selected') return openPublishDialog([...selected]);
@@ -559,6 +579,13 @@ document.addEventListener('click', event => {
 document.addEventListener('keydown', event => { if (event.target.matches?.('[data-pick]') && ['Enter', ' '].includes(event.key)) { event.preventDefault(); event.target.click(); } });
 document.addEventListener('input', event => {
   const element = event.target;
+  if (element.matches?.('[data-home-shade-color]') && settingsLocal) {
+    const value=element.value.toLowerCase();if(!/^#[\da-f]{6}$/.test(value))return;
+    settingsLocal.homeBackground.shadeColor=value;refreshSettingsDirty();
+    document.querySelectorAll('[data-action="home-bg-shade-color"]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.color===value)));
+    const label=document.querySelector('[data-home-color-value]');if(label)label.textContent=value.toUpperCase();
+    return;
+  }
   if (element.matches?.('[data-home-shade]') && settingsLocal) {
     if (element.value.trim()==='' || !Number.isFinite(Number(element.value))) return;
     const value=Math.max(0,Math.min(100,Math.round(Number(element.value))));
@@ -592,9 +619,9 @@ document.addEventListener('submit', event => {
       const node=form.querySelector('.deployment-report');node.innerHTML=`<p>检查通过：${report.fileCount}个静态文件，约${sizeLabel(report.totalBytes)}。${target.platform==='esa'?'阿里包请先解压，按包内DEPLOY.md通过Git或CLI部署。':target.platform==='edgeone'?'下载后可直接上传ZIP。':'下载后按静态网站方式部署，index.html位于最外层。'}</p><a class="btn primary" href="${esc(deploymentURL(form.dataset.id,target))}">${icon('download')}下载部署包</a>`;form.querySelector('.form-error').hidden=true;return;
     }
     if (form.id === 'publish-form') {
-      const projectIds=data.getAll('project');if(!projectIds.length&&!data.has('settings'))throw new Error('请至少选择一个作品或网站设置。');const target=deploymentFromForm(data);
+      const projectIds=data.getAll('project');if(!projectIds.length&&!data.has('settings')&&!db.spaces?.changed&&!db.projects.some(row=>row.live&&row.draft.visibility!==row.live.visibility))throw new Error('请至少选择一个作品、网站设置或分享空间修改。');const target={platform:'generic',projectName:'portfolio-site'};
       const job=await api('/api/publish','POST',{projectIds,includeSettings:data.has('settings'),deployment:target});closeDialog();
-      return followJob(job,result=>{selected.clear();const label=db.deploymentPlatforms.find(item=>item.id===target.platform)?.label||target.platform;openDialog(`${modalHead('发布完成')}<div class="modal-body"><p>${esc(label)}适配检查通过。${target.platform==='esa'?'下载后先解压，按包内DEPLOY.md通过Git或CLI部署。':target.platform==='edgeone'?'下载部署包后按包内说明上传ZIP。':'下载后按静态网站方式部署，index.html位于最外层。'}部署包可在其他电脑后台导入，继续编辑已发布作品。</p><a class="btn primary" href="${esc(deploymentURL(result.id,target))}">${icon('download')}下载部署包</a></div><footer class="modal-foot">${btn('完成','close-dialog')}</footer>`);});
+      return followJob(job,result=>{selected.clear();openDialog(`${modalHead('发布完成')}<div class="modal-body"><p>展示副本已更新。点击下方按钮将主站和各分享空间部署到服务器。静态部署包包含主站和公开空间；完整备份请使用“备份数据”。</p><a class="btn primary" href="${esc(deploymentURL(result.id,target))}">${icon('download')}下载部署包</a></div><footer class="modal-foot">${btn('增量部署到阿里云','remote-sync','','upload',`data-id="${result.id}"`)}${btn('完成','close-dialog')}</footer>`);});
     }
   };
   if (submit) submit.disabled = true;
@@ -603,7 +630,7 @@ document.addEventListener('submit', event => {
 $('#dialog').addEventListener('cancel', event => { event.preventDefault();closeDialog(); });
 $('#dialog').addEventListener('click', event => { if (event.target === $('#dialog')) { const box = event.target.getBoundingClientRect(); if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) closeDialog(); } });
 
-window.addEventListener('beforeunload', event => { if (dirty || refreshSettingsDirty() || projectImport?.committing || brandSaving || brandEditing&&brandEditing.value.trim()!==db.settings.brand) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (dirty || refreshSettingsDirty() || typeof spaceHasPending==='function'&&spaceHasPending() || projectImport?.committing || window.PortfolioUserBackup?.isRestoring() || brandSaving || brandEditing&&brandEditing.value.trim()!==db.settings.brand) { event.preventDefault(); event.returnValue = ''; } });
 (async () => { try { await loadState(); } catch (error) { $('#app').innerHTML = `<div class="boot"><p>${esc(error.message)}</p><button class="btn" data-action="reload">刷新页面</button></div>`; } })();
 
 document.addEventListener('dblclick',event=>{if(event.target.closest?.('[data-brand-name]')){event.preventDefault();beginBrandEdit().catch(error=>toast(error.message,true));}});

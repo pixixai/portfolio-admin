@@ -51,7 +51,7 @@ test('素材文件夹、上传层级、两处视图与排序拖动的完整工�
   // Send File bytes to the real upload API while simulating the local file chooser.
   window.XMLHttpRequest=class {upload={};open(method,url){this.method=method;this.url=url;}setRequestHeader(){}send(file){(async()=>{try{const r=await fetch(new URL(this.url,base),{method:this.method,headers:{Cookie:cookie,'Content-Type':file.type},body:Buffer.from(await file.arrayBuffer())});this.status=r.status;this.responseText=await r.text();this.onload();}catch{this.onerror();}})();}};
   window.document.write(await readFile(path.join(root,'public/index.html'),'utf8'));
-  window.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n')+'\nwindow.testMediaReady = () => !mediaMoveSaving;');
+  window.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n')+'\nwindow.testMediaReady = () => !mediaMoveSaving;');
   const $=selector=>window.document.querySelector(selector),$$=selector=>[...window.document.querySelectorAll(selector)];
   const change=(node,value)=>{node.value=value;node.dispatchEvent(new window.Event('change',{bubbles:true}));};
   await until(()=>$('.works-table'),'后台加载');$('[data-nav=media]').click();await until(()=>$('.media-browser'),'素材库');

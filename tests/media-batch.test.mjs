@@ -32,7 +32,7 @@ test('素材批量移动原子校验、成组排序、两处复选框、铺满�
   const window=new Window({url:base,settings:{disableCSSFileLoading:true,disableJavaScriptFileLoading:true,disableIframePageLoading:true}}),errors=[];t.after(()=>window.happyDOM.abort());
   window.fetch=(url,options={})=>fetch(new URL(url,base),{...options,headers:{...options.headers,Cookie:cookie}});window.addEventListener('error',event=>errors.push(event.message));window.document.write(await readFile(path.join(root,'public/index.html'),'utf8'));
   const css=window.document.createElement('style');css.textContent=await readFile(path.join(root,'public/style.css'),'utf8');window.document.head.append(css);
-  window.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n')+'\nwindow.mediaBatchTest={ready:()=>!mediaMoveSaving, selection:()=>[...libraryBrowser.selection]};');
+  window.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n')+'\nwindow.mediaBatchTest={ready:()=>!mediaMoveSaving, selection:()=>[...libraryBrowser.selection]};');
   const $=s=>window.document.querySelector(s),$$=s=>[...window.document.querySelectorAll(s)],node=id=>$(`[data-media-key="asset:${id}"]`),select=id=>$(`[data-media-select="asset:${id}"]`).click();
   await until(()=>$('.works-table'),'后台加载');$('[data-nav=media]').click();await until(()=>$('.media-browser'),'素材库');
   assert.equal(window.getComputedStyle($('.media-grid>.media-folder')).aspectRatio,window.getComputedStyle(node(assets[0].id)).aspectRatio,'文件夹与素材卡片比例一致');

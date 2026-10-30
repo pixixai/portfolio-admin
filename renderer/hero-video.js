@@ -163,6 +163,7 @@ export function initHeroVideo({ reducedMotion, isBlocked = () => false }) {
     if (disposed) return;
     const shadeOpacity=Number.isFinite(config.shadeOpacity)?Math.min(100,Math.max(0,config.shadeOpacity)):80;
     hero.style.setProperty('--hero-shade-opacity',String(shadeOpacity/100));
+    hero.style.setProperty('--hero-shade-color',typeof config.shadeColor==='string'&&/^#[\da-f]{6}$/i.test(config.shadeColor)?config.shadeColor:'#000000');
     playlist = (Array.isArray(config.videos) ? config.videos : []).slice(0,30).filter(item=>item&&typeof item==='object').map(item => ({src:typeof item.src === 'string' ? safeURL(item.src) : null,type:item.type==='image'?'image':'video',duration:Math.min(120,Math.max(1,Number(item.duration)||5)),playbackRate:Math.min(4,Math.max(.25,Number(item.playbackRate)||1))})).filter(item=>item.src);
     loop=config.loop!==false;
     if (!loop && typeof config.finalFrame === 'string') { const url = safeURL(config.finalFrame); if (url) finalImage.src = url; }

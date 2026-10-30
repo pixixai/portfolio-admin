@@ -2,20 +2,28 @@ import http from 'node:http';
 import { createReadStream } from 'node:fs';
 import { readFile, realpath, stat, unlink, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { openStore, now, digest } from './lib/store.mjs';
+import { openStore, now } from './lib/store.mjs';
+import { resolveRuntimeData } from './lib/runtime-data.mjs';
+import { openDefaultBrowser } from './lib/launch.mjs';
 import { Publisher } from './lib/publisher.mjs';
 import { validateProject, validateSettings, fail } from './lib/validation.mjs';
 import { zipDirectory,packageLimit } from './lib/zip.mjs';
 import {ProjectImporter} from './lib/project-package.mjs';
 import { inspectMedia } from './lib/media.mjs';
 import { projectLabels } from './lib/labels.mjs';
+import {spacesDraft,spacesLive,spaceState,saveSpace,deleteSpace,syncSpaceVisibility,isPrivate,renameSpaceLabel,spaceDefinition,mainSpace,saveMainSpace,saveProjectSpaces} from './lib/spaces.mjs';
+import {createSpaceGateway} from './resources/space-gateway.mjs';
+import {spaceServerConfig} from './lib/space-server-config.mjs';
 import { folders, validFolder, createFolder, ensureFolderPath, arrangeMedia } from './lib/media-folders.mjs';
 import { mediaDeletePlan, deleteMediaItems } from './lib/media-delete.mjs';
 import {releaseRetention} from './lib/release-retention.mjs';
 import {validateLocalRequest} from './lib/local-access.mjs';
 import {deploymentPlatforms,deploymentTarget,inspectDeployment,deploymentPackage} from './lib/deployment.mjs';
+import {RemoteSync,remoteProfile} from './lib/remote-sync.mjs';
+import {UserBackup} from './lib/user-backup.mjs';
+import {activateUserData} from './lib/restore-activation.mjs';
 
 export const root = path.dirname(fileURLToPath(import.meta.url));
 const mimeTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif', '.txt': 'text/plain; charset=utf-8', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4' };
@@ -31,12 +39,16 @@ async function jsonBody(request) {
 }
 function safePath(base, relative) { const target = path.resolve(base, '.' + relative); if (target !== base && !target.startsWith(base + path.sep)) fail('不能访问此路径。', 403); return target; }
 
-export async function createApplication({ dataDir, rendererDir = path.join(root, 'renderer') } = {}) {
-  dataDir ||= process.env.PORTFOLIO_DATA_DIR || path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.local', 'share'), 'PixixPortfolioAdmin', digest(root).slice(0, 10));
+export async function createApplication({ dataDir, rendererDir = path.join(root, 'renderer'), remoteOptions } = {}) {
+  dataDir = await resolveRuntimeData(root, { dataDir, onMigration: ({from,to}) => console.log(`旧运行数据已复制至：${to}\n原数据保留备份：${from}`) });
   await mkdir(dataDir, { recursive: true });
   dataDir = await realpath(dataDir);
-  const store = await openStore(dataDir, rendererDir), publisher = new Publisher(store, rendererDir);
-  const importer=new ProjectImporter(store,publisher);
+  let store = await openStore(dataDir, rendererDir), publisher = new Publisher(store, rendererDir);
+  syncSpaceVisibility(store);
+  let remoteSync=new RemoteSync(store,remoteOptions);
+  let importer=new ProjectImporter(store,publisher),activeWrites=0;
+  async function reloadServices(){store=await openStore(dataDir,rendererDir);syncSpaceVisibility(store);publisher=new Publisher(store,rendererDir);remoteSync=new RemoteSync(store,remoteOptions);importer=new ProjectImporter(store,publisher);await publisher.bootstrap();}
+  const backups=new UserBackup({getStore:()=>store,renderer:rendererDir,isBusy:()=>publisher.busy||remoteSync.busy||activeWrites>0,activate:stage=>activateUserData(dataDir,stage,{close:()=>store.close(),reopen:reloadServices})});
   await publisher.bootstrap();
   const respond = (response, value, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); response.end(JSON.stringify(value)); };
   async function sendFile(request, response, file, mime) {
@@ -72,35 +84,75 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
       settings: store.get('settingsDraft'), settingsLive: store.get('settingsLive'), settingsRevision: store.get('settingsRevision'),
       currentRelease: store.get('currentRelease'), releases: store.releases().map(({ snapshot, ...release }) => ({ ...release, count: snapshot.projects.length,deployment:snapshot.deployment||{platform:'generic',projectName:'portfolio-site'} })),
       releaseRetention: releaseRetention(store),
-      capabilities:{backgroundLoop:true,sidebarPreview:true,platformExport:true},
+      capabilities:{backgroundLoop:true,sidebarPreview:true,platformExport:true,remoteSync:true,userBackup:true,privateSpaces:true,spaceGroups:true,unifiedPreview:true,spaceCodes:true,spaceFormOrigin:true,spacePin:true,spaceAutoPublic:false,displaySpaces:true,shareSpaces:true},
+      spaces:{...spaceState(store),siteUrl:store.get('spacesSiteUrl')||''},
       deploymentPlatforms,deploymentTarget:store.get('deploymentTarget')||{platform:'generic',projectName:'portfolio-site'},
       jobs: [...publisher.jobs.values()].slice(-10).reverse(),
     };
   }
   function buildPublish(ids, includeSettings, targetInput) {
-    const target=deploymentTarget(targetInput);
+    const target=deploymentTarget(targetInput||{platform:'generic'});
     if (!Array.isArray(ids) || ids.length > 300 || new Set(ids).size !== ids.length) fail('请选择要发布的作品。');
     const rows = store.projects();
     const selected = ids.map(id => { const row = rows.find(row => row.id === id && !row.deletedAt); if (!row) fail('部分作品不存在。', 404); if (!row.draft.blocks.length && !row.draft.coverAssetId && !row.draft.description) fail(`“${row.draft.title}”还没有内容。`); return row; });
-    const snapshot = { settings: includeSettings ? store.get('settingsDraft') : store.get('settingsLive'), projects: rows.map(row => ids.includes(row.id) ? row.draft : row.live).filter(Boolean),deployment:target };
+    const snapshot = { settings: includeSettings ? store.get('settingsDraft') : store.get('settingsLive'), projects: rows.map(row => {const document=ids.includes(row.id)?row.draft:row.live;return document?{...document,...(row.draft.visibility?{visibility:row.draft.visibility}:{})}:null;}).filter(Boolean),deployment:target,spaces:spacesDraft(store).map(spaceDefinition),mainSpace:mainSpace(store) };
     return publisher.start('publish', snapshot, () => {
-      for (const row of selected) store.db.prepare('UPDATE projects SET live=? WHERE id=?').run(JSON.stringify(row.draft), row.id);
+      for (const document of snapshot.projects) store.db.prepare('UPDATE projects SET live=? WHERE id=?').run(JSON.stringify(document), document.id);
+      store.set('spacesLive',snapshot.spaces);store.set('mainSpaceLive',snapshot.mainSpace);
       if (includeSettings) store.set('settingsLive', snapshot.settings);
       store.set('deploymentTarget',target);
     }, `发布${selected.length}个作品${includeSettings ? '及站点设置' : ''}`,null,target);
   }
+  const spaceGateways=new Map();
+  const sidebarTargets=new Map();
+  async function serveSpace(request,response,folder,mount){const key=folder+'|'+mount;if(!spaceGateways.has(key)){if(spaceGateways.size>=30)spaceGateways.delete(spaceGateways.keys().next().value);spaceGateways.set(key,createSpaceGateway({directory:path.join(folder,'private'),mount}));}return spaceGateways.get(key)(request,response);}
   const server = http.createServer(async (request, response) => {
+    request.setTimeout(120000,()=>{if(!request.complete)request.destroy();});
     response.setHeader('Cache-Control', 'no-store'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.setHeader('Referrer-Policy', 'same-origin');
     response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; frame-src 'self'; connect-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'");
+    let trackedWrite=false;
     try {
       const url = new URL(request.url, 'http://localhost'), pathname = decodeURIComponent(url.pathname);
       validateLocalRequest(request,pathname);
+      const backupRoute=pathname.startsWith('/api/backups');
+      if(backups.activating&&!/^\/api\/backups\/jobs\//.test(pathname))fail('正在切换恢复数据，请稍候。',503);
+      if(!['GET','HEAD'].includes(request.method)&&!backupRoute){if(backups.busy)fail('正在备份或恢复数据，请完成后重试。',409);activeWrites++;trackedWrite=true;}
+      if(pathname==='/api/backups'&&request.method==='GET')return respond(response,backups.state());
+      if(pathname==='/api/backups/create'&&request.method==='POST'){const input=await jsonBody(request);await backups.expire();return respond(response,backups.create(input),202);}
+      if(pathname==='/api/backups/inspect'&&request.method==='POST')return respond(response,await backups.inspect(request));
+      if(pathname==='/api/backups/restore'&&request.method==='POST')return respond(response,backups.restore(await jsonBody(request)),202);
+      const backupMatch=pathname.match(/^\/api\/backups\/(file|jobs|pending)\/([a-f0-9-]{36})$/);
+      if(backupMatch){const[,kind,id]=backupMatch;if(kind==='file'&&request.method==='GET'){if(backups.busy)fail('正在处理数据，请稍后下载。',409);return await backups.download(id,response);}if(kind==='jobs'&&request.method==='GET'){const job=backups.jobs.get(id);if(!job)fail('任务不存在。',404);return respond(response,job);}if(kind==='pending'&&request.method==='DELETE'){await backups.discard(id);return respond(response,{ok:true});}}
       if (pathname.startsWith('/site/')) {
+        if(pathname.startsWith('/site/space/'))return await serveSpace(request,response,path.join(dataDir,'releases',store.get('currentRelease')),'/site/space');
         if (!['GET', 'HEAD'].includes(request.method)) fail('不支持此操作。', 405);
         return await serve(request, response, path.join(dataDir, 'releases', store.get('currentRelease'), 'dist'), pathname.slice(5));
       }
       if (pathname === '/site') { response.writeHead(302, { Location: '/site/' }).end(); return; }
       if (pathname === '/api/state' && request.method === 'GET') return respond(response, state());
+      if(pathname==='/api/preview/sidebar'&&request.method==='POST'){
+        const input=await jsonBody(request);if(!/^[a-f0-9-]{36}$/.test(input.clientId||'')||!/^v-\d+-[a-f0-9]{8}$/.test(input.previewId||''))fail('预览标识格式不正确。');
+        const folder=path.join(dataDir,'previews',input.previewId),meta=JSON.parse(await readFile(path.join(folder,'sidebar-preview.json'),'utf8'));
+        if(meta.clientId!==input.clientId)fail('不能切换其他预览会话的内容。',403);
+        let target=sidebarTargets.get(input.clientId);if(!target){if(sidebarTargets.size>=64)fail('预览会话过多，请重启后台或关闭多余窗口后重试。',409);target={id:input.previewId};target.gateway=createSpaceGateway({directory:()=>path.join(dataDir,'previews',target.id,'private'),mount:'/draft/'+input.clientId+'/space'});sidebarTargets.set(input.clientId,target);}else target.id=input.previewId;
+        return respond(response,{url:'/draft/'+input.clientId+'/',previewId:input.previewId});
+      }
+      const draftMatch=pathname.match(/^\/draft\/([a-f0-9-]{36})(\/.*)$/);
+      if(draftMatch){const target=sidebarTargets.get(draftMatch[1]);if(!target)fail('预览会话已结束，请重新展开实时预览。',404);if(draftMatch[2].startsWith('/space/'))return await target.gateway(request,response);if(!['GET','HEAD'].includes(request.method))fail('不支持此操作。',405);return await serve(request,response,path.join(dataDir,'previews',target.id,'dist'),draftMatch[2]);}
+      if(pathname==='/api/spaces'&&request.method==='POST'){if(publisher.busy||remoteSync.busy)fail('发布或部署进行中，请稍后修改空间。',409);return respond(response,await saveSpace(store,await jsonBody(request)),201);}
+      if(pathname==='/api/spaces/site-url'&&request.method==='PUT'){const input=await jsonBody(request);let value='';if(input.url){let parsed;try{parsed=new URL(input.url);}catch{fail('请填写有效的网站地址。');}if(!['http:','https:'].includes(parsed.protocol)||parsed.username||parsed.password||parsed.pathname!=='/'||parsed.search||parsed.hash)fail('只需填写网站地址，例如https://example.com，不含后续路径。');value=parsed.origin;}store.set('spacesSiteUrl',value);return respond(response,{ok:true});}
+      if(pathname==='/api/spaces/server-config'&&request.method==='GET'){const bytes=spaceServerConfig(store.get('remoteDeployment'));response.writeHead(200,{'Content-Type':'application/zip','Content-Length':bytes.length,'Content-Disposition':'attachment; filename="private-space-server-config.zip"'});return response.end(bytes);}
+      if(pathname==='/api/spaces/main'&&request.method==='PUT'){if(publisher.busy||remoteSync.busy)fail('正在发布或部署，请稍后修改空间。',409);return respond(response,saveMainSpace(store,await jsonBody(request)));}
+      const assignment=pathname.match(/^\/api\/projects\/([a-z][a-z0-9-]*)\/spaces$/);
+      if(assignment&&request.method==='PUT'){if(publisher.busy||remoteSync.busy)fail('正在发布或部署，请稍后修改空间。',409);return respond(response,saveProjectSpaces(store,assignment[1],await jsonBody(request)));}
+      const spaceMatch=pathname.match(/^\/api\/spaces\/(s-[a-f0-9]{24})$/);
+      if(spaceMatch&&['PUT','DELETE'].includes(request.method)){if(publisher.busy||remoteSync.busy)fail('发布或部署进行中，请稍后修改空间。',409);const input=await jsonBody(request);return respond(response,request.method==='PUT'?await saveSpace(store,input,spaceMatch[1]):deleteSpace(store,spaceMatch[1],input.revision));}
+      if(pathname==='/api/remote'&&request.method==='GET')return respond(response,remoteSync.state());
+      if(pathname==='/api/remote/fingerprint'&&request.method==='POST'){const input=await jsonBody(request);return respond(response,await remoteSync.probe(remoteProfile(input.profile)));}
+      if(pathname==='/api/remote/plan'&&request.method==='POST')return respond(response,await remoteSync.inspect(await jsonBody(request)));
+      if(pathname==='/api/remote/deploy'&&request.method==='POST')return respond(response,remoteSync.start(await jsonBody(request)),202);
+      const remoteJobMatch=pathname.match(/^\/api\/remote\/jobs\/([a-f0-9-]{36})$/);
+      if(remoteJobMatch&&request.method==='GET'){const job=remoteSync.jobs.get(remoteJobMatch[1]);if(!job)fail('部署任务不存在。',404);return respond(response,job);}
       if(pathname==='/api/import/inspect'&&request.method==='POST')return respond(response,await importer.inspect(await body(request,packageLimit)));
       if(pathname==='/api/import/commit'&&request.method==='POST')return respond(response,await importer.commit(await jsonBody(request)));
       const importMatch=pathname.match(/^\/api\/import\/([a-f0-9-]{36})$/);
@@ -172,6 +224,7 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
               store.db.prepare('UPDATE projects SET draft=?,revision=revision+1,updatedAt=? WHERE id=?').run(JSON.stringify({ ...row.draft, labels, tags: labels, category: labels[0] || '未分类' }), now(), row.id);
             }
             store.set('settingsDraft', settings); store.set('settingsRevision', input.revision + 1);
+            store.set('mainSpaceDraft',renameSpaceLabel(mainSpace(store),name,newName));const spaces=spacesDraft(store);store.set('spacesDraft',spaces.map(space=>renameSpaceLabel(space,name,newName)));store.set('spacesRevision',(store.get('spacesRevision')||1)+1);
           });
           return respond(response, { ok: true, affected: affected.length });
         }
@@ -182,6 +235,8 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
         settings.categories = removing ? settings.categories.filter(value => value !== name) : [...settings.categories, name];
         store.transaction(() => {
           if (removing) for (const row of affected) { const labels = projectLabels(row.draft).filter(label => label !== name); store.db.prepare('UPDATE projects SET draft=?,revision=revision+1,updatedAt=? WHERE id=?').run(JSON.stringify({ ...row.draft, labels, tags: labels, category: labels[0] || '未分类' }), now(), row.id); }
+          if(removing&&spacesDraft(store).some(space=>space.groups.some(group=>group.label===name))){store.set('spacesDraft',spacesDraft(store).map(space=>renameSpaceLabel(space,name,null)));store.set('spacesRevision',(store.get('spacesRevision')||1)+1);}
+          if(removing){store.set('mainSpaceDraft',renameSpaceLabel(mainSpace(store),name,null));store.set('spacesRevision',(store.get('spacesRevision')||1)+1);}
           store.set('settingsDraft', settings); store.set('settingsRevision', input.revision + 1);
         });
         return respond(response, { ok: true, affected: affected.length });
@@ -211,10 +266,11 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
         }
       }
       if (pathname === '/api/preview' && request.method === 'POST') {
-        const input = await jsonBody(request), snapshot = { settings: input.settings ? validateSettings(input.settings,store) : store.get('settingsDraft'), projects: store.projects().filter(row => !row.deletedAt).map(row => row.draft) };
-        if (input.project) { const row = store.project(input.project.id); if (!row || row.deletedAt) fail('作品不存在。', 404); const project = validateProject(input.project, row.draft, store); snapshot.projects = snapshot.projects.map(doc => doc.id === project.id ? project : doc); }
+        const input = await jsonBody(request), snapshot = { settings: input.settings ? validateSettings(input.settings,store) : store.get('settingsDraft'), projects: store.projects().filter(row => !row.deletedAt).map(row => row.draft),spaces:spacesDraft(store),mainSpace:mainSpace(store) };
+        if(input.sidebarScope!=null&&input.sidebarScope!=='public'&&!spacesDraft(store).some(space=>space.id===input.sidebarScope))fail('所选预览空间不存在。',404);
+        if (input.project) { const row = store.project(input.project.id); if (!row || row.deletedAt) fail('作品不存在。', 404); const project = validateProject(input.project, row.draft, store); snapshot.projects = snapshot.projects.map(doc => doc.id === project.id ? project : doc); if(input.sidebarScope==null)snapshot.previewProjectId=project.id; }
         let sidebar=null;
-        if(input.sidebarClientId!=null){if(typeof input.sidebarClientId!=='string'||!/^[a-f0-9-]{36}$/.test(input.sidebarClientId)||input.keepPreviewId!=null&&(typeof input.keepPreviewId!=='string'||!/^v-\d+-[a-f0-9]{8}$/.test(input.keepPreviewId)))fail('预览标识格式不正确。');sidebar={clientId:input.sidebarClientId,keepId:input.keepPreviewId||null};}
+        if(input.sidebarClientId!=null){if(typeof input.sidebarClientId!=='string'||!/^[a-f0-9-]{36}$/.test(input.sidebarClientId)||input.keepPreviewId!=null&&(typeof input.keepPreviewId!=='string'||!/^v-\d+-[a-f0-9]{8}$/.test(input.keepPreviewId)))fail('预览标识格式不正确。');sidebar={clientId:input.sidebarClientId,keepId:input.keepPreviewId||sidebarTargets.get(input.sidebarClientId)?.id||null};}
         return respond(response, publisher.start('preview', snapshot, () => {}, '草稿预览',sidebar), 202);
       }
       if (pathname === '/api/publish' && request.method === 'POST') { const input = await jsonBody(request); return respond(response, buildPublish(input.projectIds, Boolean(input.includeSettings),input.deployment), 202); }
@@ -242,27 +298,48 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
             store.db.prepare('INSERT INTO projects(id,draft,live,updatedAt) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET live=excluded.live,deletedAt=NULL').run(project.id, json, json, now());
           }
           store.set('settingsLive', release.snapshot.settings);
+          store.set('spacesLive',release.snapshot.spaces||[]);store.set('mainSpaceLive',release.snapshot.mainSpace||null);
         }, `回退到：${release.title}`), 202);
       }
       const previewMatch = pathname.match(/^\/preview\/([\w-]+)(\/.*)$/);
+      if(previewMatch&&previewMatch[2].startsWith('/space/'))return await serveSpace(request,response,path.join(dataDir,'previews',previewMatch[1]),'/preview/'+previewMatch[1]+'/space');
       if (previewMatch && ['GET', 'HEAD'].includes(request.method)) return await serve(request, response, path.join(dataDir, 'previews', previewMatch[1], 'dist'), previewMatch[2]);
       const historyMatch = pathname.match(/^\/history\/([\w-]+)(\/.*)$/);
+      if(historyMatch&&historyMatch[2].startsWith('/space/')&&store.releases().some(release=>release.id===historyMatch[1]))return await serveSpace(request,response,path.join(dataDir,'releases',historyMatch[1]),'/history/'+historyMatch[1]+'/space');
       if (historyMatch && ['GET', 'HEAD'].includes(request.method) && store.releases().some(release => release.id === historyMatch[1])) return await serve(request, response, path.join(dataDir, 'releases', historyMatch[1], 'dist'), historyMatch[2]);
       if (pathname.startsWith('/api/') || pathname.startsWith('/preview/') || pathname.startsWith('/history/')) fail('接口不存在。', 404);
       if (!['GET', 'HEAD'].includes(request.method)) fail('不支持此操作。', 405);
       if (pathname === '/vendor/gsap.min.js') return await serve(request, response, path.join(root, 'node_modules/gsap/dist'), '/gsap.min.js');
       await serve(request, response, path.join(root, 'public'), pathname === '/' ? '/index.html' : pathname);
     } catch (error) {
+      if(response.headersSent){response.destroy(error);return;}
       const status = error.status || (error instanceof URIError ? 400 : ['ENOENT', 'ENOTDIR'].includes(error.code) ? 404 : 500);
       respond(response, { error: status === 500 ? '操作未完成，请重试或查看服务日志。' : status === 404 && !error.status ? '文件不存在。' : error.message }, status);
       if (status === 500) console.error(error);
-    }
+    } finally {if(trackedWrite)activeWrites--;}
   });
-  server.requestTimeout = 120000;
-  return { server, store, publisher, dataDir, async close() { await new Promise(resolve => server.close(resolve)); store.close(); } };
+  // Large private backups may upload for longer than two minutes. Enforce
+  // incoming-body inactivity and byte limits instead of an overall deadline.
+  server.requestTimeout = 0;server.headersTimeout=60000;
+  return { server, get store(){return store;}, get publisher(){return publisher;}, get remoteSync(){return remoteSync;}, backups, dataDir, async close() { await new Promise(resolve => server.close(resolve)); store.close(); } };
+}
+export async function startApplication({ port = Number(process.env.PORT || 4180), openBrowser = false, browserOpener = openDefaultBrowser, ...options } = {}) {
+  // Detect an old running instance before migrating its data or bootstrapping.
+  const probe = net.createServer();
+  await new Promise((resolve,reject) => { probe.once('error',reject);probe.listen(port,'127.0.0.1',resolve); });
+  await new Promise(resolve => probe.close(resolve));
+  const app = await createApplication(options);
+  try {
+    await new Promise((resolve,reject) => { app.server.once('error',reject);app.server.listen(port,'127.0.0.1',resolve); });
+  } catch (error) { app.store.close(); throw error; }
+  const url = `http://127.0.0.1:${app.server.address().port}/`;
+  console.log(`后台管理系统：${url}\n展示副本：${url}site/\n运行数据：${app.dataDir}`);
+  if (openBrowser) browserOpener(url);
+  return app;
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const app = await createApplication(); const port = Number(process.env.PORT || 4180);
-  app.server.listen(port, '127.0.0.1', () => console.log(`后台管理系统：http://127.0.0.1:${port}/\n展示副本：http://127.0.0.1:${port}/site/\n运行数据：${app.dataDir}`));
+  const app = await startApplication({openBrowser:process.argv.includes('--open-browser')}).catch(error=>{
+    console.error(error.code==='EADDRINUSE'?'后台端口已被占用，请关闭原来的后台窗口后重试。':error.message);process.exit(1);
+  });
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => { await app.close(); process.exit(0); });
 }

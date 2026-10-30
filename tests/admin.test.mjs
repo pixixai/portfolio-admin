@@ -57,6 +57,16 @@ test('独立管理系统完整工作流', async t => {
   async function ok(url, method, data, expected = 200) { const result = await request(url, method, data); assert.equal(result.response.status, expected, JSON.stringify(result.value)); return result.value; }
   async function job(job) { await until(() => app.publisher.jobs.get(job.id).status !== 'running', '生成站点'); const result = app.publisher.jobs.get(job.id); assert.equal(result.status, 'done', result.message); await until(() => !app.publisher.busy, '发布队列结束'); return result; }
   const manifest = async (prefix = '/site/') => ok(prefix + 'data/projects.json');
+  // Content/export tests opt their fixtures into the main space explicitly.
+  async function showOnMain(id) {
+    const state = await ok('/api/state'), row = state.projects.find(item => item.id === id), groups = structuredClone(state.spaces.main.groups);
+    for (const label of row.draft.labels.length ? row.draft.labels : ['未分类']) {
+      let group = groups.find(item => item.label === label);
+      if (!group) { group = { label, mode: 'selected', projectIds: [] }; groups.push(group); }
+      group.projectIds = [...new Set([...group.projectIds, id])];
+    }
+    await ok('/api/spaces/main', 'PUT', { revision: state.spaces.revision, groups });
+  }
 
   await t.test('首次初始化直接进入，保留本机来源限制且数据目录不可直接访问', async () => {
     initial = await ok('/api/state');
@@ -92,6 +102,7 @@ test('独立管理系统完整工作流', async t => {
     duplicate = await ok(`/api/projects/${saved.id}/duplicate`, 'POST', {}, 201);
     assert.equal(duplicate.live, null); assert.notEqual(duplicate.id, saved.id);
     duplicate = await ok(`/api/projects/${duplicate.id}`, 'PUT', { ...duplicate.draft, title: '新作品 · 预览专用', coverAssetId: uploaded.id, coverRatio: '16:9', revision: duplicate.revision, blocks: [{ id: 'text-one', type: 'heading', text: '设计过程' }, { id: 'image-one', type: 'image', assetId: uploaded.id, alt: '新上传图片' }, { id: 'text-two', type: 'text', text: '这个段落支持 **加粗**。' }] });
+    await showOnMain(duplicate.id);
     const preview = await job(await ok('/api/preview', 'POST', {}, 202));
     assert.equal((await request(preview.url, 'GET', undefined, { anonymous: true })).response.status, 200);
     assert.equal((await request(preview.url, 'GET', undefined, { headers:{'Sec-Fetch-Site':'cross-site'} })).response.status,403);
@@ -176,6 +187,7 @@ test('独立管理系统完整工作流', async t => {
     assert.equal((await request(`/api/projects/${mediaProject.id}`, 'PUT', { ...mediaProject.draft, revision: mediaProject.revision, blocks: [{ id: 'bad', type: 'image', assetId: audio.id }] })).response.status, 400);
     const range = await fetch(`${base}/api/media/${audio.id}/file`, { headers: { Cookie: cookie, Range: 'bytes=0-11' } });
     assert.equal(range.status, 206); assert.equal(range.headers.get('content-range'), `bytes 0-11/${testWav().length}`); assert.equal((await range.arrayBuffer()).byteLength, 12);
+    await showOnMain(mediaProject.id);
     const preview = await job(await ok('/api/preview', 'POST', {}, 202));
     assert.equal(app.store.asset(image.id).library, 0); assert.equal(app.store.asset(audio.id).library, 0);
     const fragment = (await ok(preview.url + `data/projects/${mediaProject.id}.json`)).html;
@@ -222,7 +234,7 @@ test('独立管理系统完整工作流', async t => {
     window.fetch = (url, options = {}) => { if (url === '/api/categories') mutations.push(options.method); return fetch(new URL(url, base), { ...options, headers: { ...options.headers, Cookie: cookie } }); };
     window.addEventListener('error', event => errors.push(event.message));
     window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8'));
-    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
+    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
     const $ = selector => window.document.querySelector(selector), input = () => $('[data-category-editor] input');
     const type = value => { input().value = value; input().dispatchEvent(new window.Event('input', { bubbles: true })); };
     const key = key => input().dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
@@ -260,7 +272,7 @@ test('独立管理系统完整工作流', async t => {
     window.addEventListener('error', event => errors.push(event.message));
     const motions = []; window.gsap = { killTweensOf() {}, fromTo(target, from, to) { motions.push({ target, from, to }); return { kill() {} }; } };
     window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8'));
-    window.eval(await readFile(path.join(root, 'public/media-browser.js'), 'utf8') + '\n' + await readFile(path.join(root, 'public/editor.js'), 'utf8') + '\n' + await readFile(path.join(root, 'public/document-selection.js'), 'utf8') + '\n' + await readFile(path.join(root, 'public/document.js'), 'utf8') + '\n' + await readFile(path.join(root, 'public/app.js'), 'utf8'));
+    window.eval(await readFile(path.join(root, 'public/media-browser.js'), 'utf8') + '\n' + await readFile(path.join(root, 'public/editor.js'), 'utf8') + '\n' + await readFile(path.join(root, 'public/document-selection.js'), 'utf8') + '\n' + await readFile(path.join(root, 'public/document.js'), 'utf8') + '\n' + await readFile(path.join(root, 'public/spaces.js'), 'utf8') + '\n' + await readFile(path.join(root, 'public/app.js'), 'utf8'));
     const $ = selector => window.document.querySelector(selector);
     const click = selector => { assert.ok($(selector), `缺少交互元素 ${selector}`); $(selector).click(); };
     const input = (selector, value) => { assert.ok($(selector), selector); $(selector).value = value; $(selector).dispatchEvent(new window.Event('input', { bubbles: true })); };
@@ -334,7 +346,7 @@ test('独立管理系统完整工作流', async t => {
     const motions = []; window.gsap = { killTweensOf() {}, fromTo(node, from) { motions.push(from); } };
     window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8'));
     const css = window.document.createElement('style'); css.textContent = await readFile(path.join(root, 'public/style.css'), 'utf8'); window.document.head.append(css);
-    window.eval((await Promise.all(['media-browser.js', 'editor.js', 'document-selection.js', 'document.js', 'app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n') + '\nwindow.testSortReady = () => !sortSaving;');
+    window.eval((await Promise.all(['media-browser.js', 'editor.js', 'document-selection.js', 'document.js', 'spaces.js', 'app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n') + '\nwindow.testSortReady = () => !sortSaving;');
     const $ = selector => window.document.querySelector(selector), $$ = selector => [...window.document.querySelectorAll(selector)];
     await until(() => $('.works-table'), '作品管理加载');
     assert.equal($('.summary-strip'), null);
@@ -399,7 +411,7 @@ test('独立管理系统完整工作流', async t => {
     t.after(() => window.happyDOM.abort()); window.fetch = (url, options = {}) => fetch(new URL(url, base), { ...options, headers: { ...options.headers, Cookie: cookie } }); window.addEventListener('error', event => errors.push(event.message));
     window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8'));
     const css = window.document.createElement('style'); css.textContent = await readFile(path.join(root, 'public/style.css'), 'utf8'); window.document.head.append(css);
-    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n') + '\nwindow.testWorkDrag = { ready: () => !sortSaving, selection: () => [...selected] };');
+    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n') + '\nwindow.testWorkDrag = { ready: () => !sortSaving, selection: () => [...selected] };');
     const $ = selector => window.document.querySelector(selector), $$ = selector => [...window.document.querySelectorAll(selector)];
     await until(() => $('.works-table'), '作品管理');
     const order = () => $$('[data-row]').map(node => node.dataset.row);
@@ -444,7 +456,7 @@ test('独立管理系统完整工作流', async t => {
     window.fetch = (url, options = {}) => fetch(new URL(url, base), { ...options, headers: { ...options.headers, Cookie: cookie } });
     window.addEventListener('error', event => errors.push(event.message));
     window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8'));
-    window.eval((await Promise.all(['media-browser.js', 'editor.js', 'document-selection.js', 'document.js', 'app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
+    window.eval((await Promise.all(['media-browser.js', 'editor.js', 'document-selection.js', 'document.js', 'spaces.js', 'app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
     const $ = selector => window.document.querySelector(selector), $$ = selector => [...window.document.querySelectorAll(selector)];
     const click = selector => { assert.ok($(selector), selector); $(selector).click(); };
     const type = (selector, value) => { const node = typeof selector === 'string' ? $(selector) : selector; assert.ok(node); node.focus(); node.value = value; node.dispatchEvent(new window.Event('input', { bubbles: true })); return node; };
@@ -479,6 +491,7 @@ test('独立管理系统完整工作流', async t => {
     click('[data-action=save]'); await until(() => app.store.projects().some(row => row.draft.title === '文档式作品检查' && row.draft.blocks[0].text === '左边'), '保存文档数据');
     let row = app.store.projects().find(row => row.draft.title === '文档式作品检查'); assert.deepEqual(row.draft.labels, optionNames); assert.deepEqual(row.draft.tags, optionNames); assert.equal(row.draft.description, '简介位于标签下方');
     click('[data-action=close-editor]'); await until(() => !$('.editor-overlay'), '关闭并保存文档');
+    await showOnMain(row.id);
     await job(await ok('/api/publish', 'POST', { projectIds: [row.id], includeSettings: false }, 202));
     const item = (await manifest()).find(project => project.id === row.id); assert.deepEqual(item.labels, optionNames);
     const html = (await request('/site/')).value; for (const label of optionNames) assert.ok(html.includes(`data-category="${label}"`), `展示站标签 ${label}`);
@@ -499,7 +512,7 @@ test('独立管理系统完整工作流', async t => {
     window.fetch = (url, options = {}) => fetch(new URL(url, base), { ...options, headers: { ...options.headers, Cookie: cookie } });
     window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8'));
     window.eval(await readFile(path.join(root, 'public/rich-text.bundle.js'), 'utf8'));
-    window.eval((await Promise.all(['media-browser.js', 'editor.js', 'document-selection.js', 'document.js', 'app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
+    window.eval((await Promise.all(['media-browser.js', 'editor.js', 'document-selection.js', 'document.js', 'spaces.js', 'app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
     const $ = selector => window.document.querySelector(selector), $$ = selector => [...window.document.querySelectorAll(selector)];
     const click = selector => { assert.ok($(selector), selector); $(selector).click(); };
     const rich = (index = -1) => window.PortfolioRichText.get($$('[data-block-field=text]').at(index).dataset.blockId);
@@ -568,6 +581,7 @@ test('独立管理系统完整工作流', async t => {
     click('[data-action=close-editor]'); await until(() => !$('.editor-overlay'), '关闭重开检查');
     const updated = app.store.project(row.id); assert.equal(updated.draft.blocks[0].id, imageId); assert.ok(updated.draft.blocks.some(block => block.type === 'table' && block.text.includes('表格内容')));
     click(`[data-action=edit][data-id="${row.id}"]`); await until(() => $('.rich-editor table'), '表格保存后重开'); assert.ok($('.rich-editor table').textContent.includes('表格内容')); assert.equal($('.rich-editor table').querySelectorAll('tr').length, 4); assert.equal($('.rich-editor table').querySelectorAll('th').length, 7); click('[data-action=close-editor]'); await until(() => !$('.editor-overlay'), '关闭表格检查');
+    await showOnMain(row.id);
     await job(await ok('/api/publish', 'POST', { projectIds: [row.id], includeSettings: false }, 202));
     const fragment = (await ok(`/site/data/projects/${row.id}.json`)).html;
     assert.ok(fragment.includes('<h1>标题</h1>')); assert.ok(fragment.includes('<strong>左</strong>')); assert.ok(fragment.includes('<strong>右</strong>')); assert.ok(fragment.includes('checked=""')); assert.ok(fragment.includes('<u>下划线</u>')); assert.ok(fragment.includes('<code>行内</code>'));
@@ -595,7 +609,7 @@ test('独立管理系统完整工作流', async t => {
     window.addEventListener('error', event => errors.push(event.message)); window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8'));
     const css = window.document.createElement('style'); css.textContent = await readFile(path.join(root, 'public/style.css'), 'utf8'); window.document.head.append(css);
     window.eval(await readFile(path.join(root, 'public/rich-text.bundle.js'), 'utf8'));
-    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
+    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
     const $ = selector => window.document.querySelector(selector), $$ = selector => [...window.document.querySelectorAll(selector)];
     const click = selector => { assert.ok($(selector), selector); $(selector).click(); }, block = id => $(`[data-block="${id}"]`), rich = id => window.PortfolioRichText.get(id);
     const key = (node, value) => { const event = new window.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true }); node.dispatchEvent(event); return event; };
@@ -642,7 +656,7 @@ test('独立管理系统完整工作流', async t => {
     window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8'));
     const css = window.document.createElement('style'); css.textContent = await readFile(path.join(root, 'public/style.css'), 'utf8'); window.document.head.append(css);
     window.eval(await readFile(path.join(root, 'public/rich-text.bundle.js'), 'utf8'));
-    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
+    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
     const $ = selector => window.document.querySelector(selector), $$ = selector => [...window.document.querySelectorAll(selector)], block = id => $(`[data-block="${id}"]`), rich = id => window.PortfolioRichText.get(id);
     const click = selector => { assert.ok($(selector), selector); $(selector).click(); };
     const key = (node, value, modifiers = {}) => { const event = new window.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true, ...modifiers }); node.dispatchEvent(event); return event; };
@@ -697,6 +711,7 @@ test('独立管理系统完整工作流', async t => {
     locate(); pointer(rich(nextId).view.dom, 'pointerdown', 2, 120); pointer(block(imageId), 'pointermove', 1, 20); pointer(block(imageId), 'pointerup', 1, 20); await tick(); assert.equal($$('.has-document-selection').length, 2);
     key(window.document.activeElement, 'Escape'); rich(nextId).commands.focus('start', { scrollIntoView: false }); await tick(); key(rich(nextId).view.dom, 'Tab');
     click('[data-action=save]'); await until(() => app.store.project(project.id).draft.blocks.find(item => item.id === imageId)?.indent === 1, '媒体缩进持久化');
+    await showOnMain(project.id);
     const preview = await job(await ok('/api/preview', 'POST', {}, 202));
     const html = (await ok(`${preview.url}data/projects/${project.id}.json`)).html; assert.ok(html.includes('portfolio-indent')); assert.ok(!html.includes('&lt;!-- portfolio-indent'));
     assert.deepEqual(errors, []); assert.deepEqual($$('.toast.error').map(node => node.textContent), []);
@@ -711,7 +726,7 @@ test('独立管理系统完整工作流', async t => {
     const window = new Window({ url: base, settings: { disableCSSFileLoading: true, disableJavaScriptFileLoading: true, disableIframePageLoading: true } }), errors = [];
     Object.defineProperty(window.navigator, 'platform', { value: 'Win32' }); t.after(async () => { window.PortfolioRichText?.destroyAll(); await window.happyDOM.abort(); });
     window.fetch = (url, options = {}) => fetch(new URL(url, base), { ...options, headers: { ...options.headers, Cookie: cookie } }); window.addEventListener('error', event => errors.push(event.message)); window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8'));
-    window.eval(await readFile(path.join(root, 'public/rich-text.bundle.js'), 'utf8')); window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
+    window.eval(await readFile(path.join(root, 'public/rich-text.bundle.js'), 'utf8')); window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
     const $ = selector => window.document.querySelector(selector), $$ = selector => [...window.document.querySelectorAll(selector)], node = id => $(`[data-block="${id}"]`), grip = id => node(id).querySelector('[data-block-handle]'), order = () => $$('[data-block]').map(item => item.dataset.block);
     const frame = () => new Promise(resolve => window.requestAnimationFrame(resolve)), click = selector => { assert.ok($(selector), selector); $(selector).click(); };
     const pointer = (target, type, x, y, modifiers = {}) => target.dispatchEvent(new window.PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 62, pointerType: 'mouse', button: 0, clientX: x, clientY: y, ...modifiers }));
@@ -751,7 +766,7 @@ test('独立管理系统完整工作流', async t => {
     window.fetch = (url, options = {}) => fetch(new URL(url, base), { ...options, headers: { ...options.headers, Cookie: cookie } }); window.addEventListener('error', event => errors.push(event.message));
     window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8'));
     const css = window.document.createElement('style'); css.textContent = await readFile(path.join(root, 'public/style.css'), 'utf8'); window.document.head.append(css);
-    window.eval(await readFile(path.join(root, 'public/rich-text.bundle.js'), 'utf8')); window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
+    window.eval(await readFile(path.join(root, 'public/rich-text.bundle.js'), 'utf8')); window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
     const $ = selector => window.document.querySelector(selector), $$ = selector => [...window.document.querySelectorAll(selector)], rich = id => window.PortfolioRichText.get(id);
     const click = selector => { assert.ok($(selector), selector); $(selector).click(); };
     const key = node => { const event = new window.KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true, cancelable: true }); node.dispatchEvent(event); assert.equal(event.defaultPrevented, true); };
@@ -798,7 +813,7 @@ test('独立管理系统完整工作流', async t => {
     t.after(async () => { window.PortfolioRichText?.destroyAll(); await window.happyDOM.abort(); });
     window.fetch = (url, options = {}) => fetch(new URL(url, base), { ...options, headers: { ...options.headers, Cookie: cookie } }); window.addEventListener('error', event => errors.push(event.message));
     window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8')); window.eval(await readFile(path.join(root, 'public/rich-text.bundle.js'), 'utf8'));
-    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
+    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
     const $ = selector => window.document.querySelector(selector), $$ = selector => [...window.document.querySelectorAll(selector)], rich = id => window.PortfolioRichText.get(id);
     const click = selector => { assert.ok($(selector), selector); $(selector).click(); };
     const key = (node, value) => { const event = new window.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true }); node.dispatchEvent(event); return event; };
@@ -831,7 +846,7 @@ test('独立管理系统完整工作流', async t => {
       return fetch(new URL(url, base), { ...options, headers: { ...options.headers, Cookie: cookie } });
     };
     window.addEventListener('error', event => errors.push(event.message)); window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8'));
-    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
+    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
     const $ = selector => window.document.querySelector(selector), button = () => $('.editor-heading [data-action=save]');
     const click = selector => { assert.ok($(selector), selector); $(selector).click(); }, input = (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new window.Event('input', { bubbles: true })); };
     const shortcut = (modifiers = { ctrlKey: true }) => { const event = new window.KeyboardEvent('keydown', { key: 's', ...modifiers, bubbles: true, cancelable: true }); $('[data-field=title]').dispatchEvent(event); assert.equal(event.defaultPrevented, true); };
@@ -863,7 +878,7 @@ test('独立管理系统完整工作流', async t => {
     t.after(() => window.happyDOM.abort()); window.fetch = (url, options = {}) => fetch(new URL(url, base), { ...options, headers: { ...options.headers, Cookie: cookie } });
     window.addEventListener('error', event => errors.push(event.message)); window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8'));
     const css = window.document.createElement('style'); css.textContent = await readFile(path.join(root, 'public/style.css'), 'utf8'); window.document.head.append(css);
-    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
+    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
     const $ = selector => window.document.querySelector(selector), click = selector => { assert.ok($(selector), selector); $(selector).click(); };
     await until(() => $('.works-table'), '作品列表');
     for (const project of projects) {
@@ -898,12 +913,13 @@ test('独立管理系统完整工作流', async t => {
       { id: 'first-image', type: 'image', assetId: first.id, alt: '' }, { id: 'second-image', type: 'image', assetId: second.id, alt: '' },
       ...['video','audio'].map(kind => ({ id: kind, type: kind, assetId: assets.find(asset => asset.mime.startsWith(kind + '/')).id, alt: '' })),
     ] }, 201);
+    await showOnMain(row.id);
     assert.equal((await request(`/api/projects/${row.id}`, 'PUT', { ...row.draft, revision: row.revision, useFirstImage: 'yes' })).response.status, 400);
     const window = new Window({ url: base, settings: { disableCSSFileLoading: true, disableJavaScriptFileLoading: true, disableIframePageLoading: true } }), errors = [];
     Object.defineProperty(window.navigator, 'platform', { value: 'Win32' }); t.after(async () => { window.PortfolioRichText?.destroyAll(); await window.happyDOM.abort(); });
     window.fetch = (url, options = {}) => fetch(new URL(url, base), { ...options, headers: { ...options.headers, Cookie: cookie } }); window.addEventListener('error', event => errors.push(event.message));
     window.document.write(await readFile(path.join(root, 'public/index.html'), 'utf8')); window.eval(await readFile(path.join(root, 'public/rich-text.bundle.js'), 'utf8'));
-    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
+    window.eval((await Promise.all(['media-browser.js', 'editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file => readFile(path.join(root, 'public', file), 'utf8')))).join('\n'));
     const $ = selector => window.document.querySelector(selector), $$ = selector => [...window.document.querySelectorAll(selector)];
     const click = selector => { assert.ok($(selector), selector); $(selector).click(); }, key = (node, value, modifiers = {}) => { const event = new window.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true, ...modifiers }); node.dispatchEvent(event); return event; };
     const input = (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new window.Event('input', { bubbles: true })); };

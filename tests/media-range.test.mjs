@@ -22,7 +22,7 @@ test('素材三种布局Shift正反向连选、复选框和标签点击、筛选
   const w=new Window({url:base,settings:{disableCSSFileLoading:true,disableJavaScriptFileLoading:true,disableIframePageLoading:true}}),errors=[];
   t.after(()=>w.happyDOM.abort());w.fetch=(url,options={})=>fetch(new URL(url,base),{...options,headers:{...options.headers,Cookie:cookie}});w.addEventListener('error',event=>errors.push(event.message));
   w.document.write(await readFile(path.join(root,'public/index.html'),'utf8'));
-  w.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n'));
+  w.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n'));
   const $=s=>w.document.querySelector(s),$$=s=>[...w.document.querySelectorAll(s)];
   const rows=()=>$$('.media-browser [data-media-key]').map(node=>node.dataset.mediaKey);
   const assets=()=>rows().filter(key=>key.startsWith('asset:'));

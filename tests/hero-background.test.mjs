@@ -22,6 +22,14 @@ async function fixture(t, config, reduced = false) {
   return {w,hero,videos,loaded,timers,tick,load,dispose,mediaQuery,click:()=>hero.dispatchEvent(new w.MouseEvent('click',{bubbles:true}))};
 }
 
+test('首页使用已保存的蒙板颜色与不透明度，旧配置和非法颜色回退黑色',async t=>{
+  const color=await fixture(t,{videos:[],shadeColor:'#214d3d',shadeOpacity:37});
+  assert.equal(color.hero.style.getPropertyValue('--hero-shade-color'),'#214d3d');assert.equal(color.hero.style.getPropertyValue('--hero-shade-opacity'),'0.37');
+  for(const shadeColor of [undefined,'red;display:none',42]){
+    const legacy=await fixture(t,{videos:[],shadeColor});assert.equal(legacy.hero.style.getPropertyValue('--hero-shade-color'),'#000000');assert.equal(legacy.hero.style.getPropertyValue('--hero-shade-opacity'),'0.8');
+  }
+});
+
 test('图片、视频混合播放按序切换，图片暂停保留剩余时长，末项保留并可重播',async t=>{
   const f=await fixture(t,{loop:false,videos:[{src:'a.png',type:'image',duration:5},{src:'b.mp4',playbackRate:2},{src:'c.png',type:'image',duration:3}]});
   assert.equal(f.hero.dataset.playbackState,'loading');assert.ok(f.videos.every(video=>video.paused));

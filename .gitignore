@@ -1,5 +1,12 @@
 node_modules/
 data/
+user/
+.user-migration-*/
+__pycache__/
+.portfolio-user-restore-*/
+.portfolio-user-before-restore-*/
+.portfolio-user-switch-*.json*
+.portfolio-user-transfer-*/
 !data/.gitkeep
 renderer/dist/
 renderer/.preview/

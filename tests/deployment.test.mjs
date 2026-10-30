@@ -68,18 +68,17 @@ test('三种部署包目录、配置、字节统计与恢复数据一致，历�
   // DOM exercises the real API while keeping actual local user data untouched.
   const w=new Window({url:base,settings:{disableCSSFileLoading:true,disableJavaScriptFileLoading:true,disableIframePageLoading:true}});t.after(()=>w.happyDOM.abort());
   const errors=[];w.addEventListener('error',event=>errors.push(event.message));w.fetch=(url,options)=>fetch(new URL(url,base),options);
-  w.document.write(await readFile(path.join(root,'public/index.html'),'utf8'));w.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n'));
+  w.document.write(await readFile(path.join(root,'public/index.html'),'utf8'));w.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','spaces.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n'));
   const $=selector=>w.document.querySelector(selector);
   await until(()=>$('[data-action=publish-dialog]'),'发布入口');$('[data-action=publish-dialog]').click();await until(()=>$('#publish-form'),'发布面板');
-  const select=$('[data-deployment-platform]');assert.equal(select.querySelector('[selected]').value,'esa');assert.equal($('.esa-project-field').hidden,false);
-  select.value='edgeone';select.dispatchEvent(new w.Event('change',{bubbles:true}));assert.equal($('.esa-project-field').hidden,true);assert.match($('.deployment-description').textContent,/20000/);
+  assert.equal($('[data-deployment-platform]'),null,'日常发布不再要求选择部署平台');
   $('[data-action=close-dialog]').click();$('[data-nav=releases]').click();await until(()=>$('[data-action=export-release]'),'发布记录');$('[data-action=export-release]').click();
-  await until(()=>$('#export-form'),'历史导出');$('[data-deployment-platform]').value='esa';$('#export-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await until(()=>$('.deployment-report a'),'预检下载');assert.match($('.deployment-report a').getAttribute('href'),/platform=esa/);
+  await until(()=>$('#export-form'),'历史导出');const select=$('[data-deployment-platform]');assert.equal(select.querySelector('[selected]').value,'esa');select.value='edgeone';select.dispatchEvent(new w.Event('change',{bubbles:true}));assert.equal($('.esa-project-field').hidden,true);assert.match($('.deployment-description').textContent,/20000/);select.value='esa';select.dispatchEvent(new w.Event('change',{bubbles:true}));$('#export-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await until(()=>$('.deployment-report a'),'预检下载');assert.match($('.deployment-report a').getAttribute('href'),/platform=esa/);
   assert.match($('.deployment-report').textContent,/解压/);assert.deepEqual(errors,[]);assert.deepEqual((await request('/api/state')).releases,state.releases);
   $('[data-action=close-dialog]').click();$('[data-action=publish-dialog]').click();await until(()=>$('#publish-form'),'再次发布');
-  $('[data-deployment-platform]').value='edgeone';$('[data-deployment-platform]').dispatchEvent(new w.Event('change',{bubbles:true}));$('#publish-form [name=settings]').checked=true;
-  $('#publish-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await until(()=>$('#dialog a[href*="platform=edgeone"]'),'发布完成下载');
-  assert.equal((await request('/api/state')).deploymentTarget.platform,'edgeone');assert.deepEqual(errors,[]);
+  assert.equal($('#publish-form [data-deployment-platform]'),null);$('#publish-form [name=settings]').checked=true;
+  $('#publish-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await until(()=>$('#dialog a[href*="platform=generic"]'),'发布完成下载');
+  assert.equal((await request('/api/state')).deploymentTarget.platform,'generic');assert.deepEqual(errors,[]);
 });
 
 test('云平台超限时阻止发布和下载，保留当前站点与设置；通用导出仍可检查',async t=>{
