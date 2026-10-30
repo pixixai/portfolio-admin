@@ -1,0 +1,26 @@
+# Use inside BOTH existing HTTPS server blocks (admin and public website).
+# Keep each site's existing server_name, SSL certificates and HTTPS settings.
+# Replace the existing location / instead of adding another duplicate rule.
+client_max_body_size 50g;
+
+# Keep or merge the existing certificate-challenge location.
+# Replace CHANGE_ME_SITE_ROOT separately for each domain's actual web root.
+location ^~ /.well-known/acme-challenge/ {
+    root /www/wwwroot/CHANGE_ME_SITE_ROOT;
+    try_files $uri =404;
+}
+
+# All website files must go through the current-release allowlist.
+# Do not add direct filesystem access to the application or user directory.
+location ^~ / {
+    proxy_pass http://127.0.0.1:4180;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection "";
+    proxy_request_buffering off;
+    proxy_buffering off;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+}

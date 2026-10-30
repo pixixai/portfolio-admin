@@ -9,6 +9,7 @@ test('无账号后台仅允许本机连接及可信本机地址，拒绝域名�
   for(const remoteAddress of ['::1','::ffff:127.0.0.1'])assert.doesNotThrow(()=>validateLocalRequest(request({socket:{remoteAddress}}),'/api/state'));
   for(const host of ['evil.invalid:4180','127.0.0.1.evil.invalid:4180','127.0.0.1:4181','localhost:4180/path','user@localhost:4180','localhost:4180?x=1','localhost:4180#fragment',undefined])rejected(request({headers:{host}}));
   rejected(request({socket:{remoteAddress:'192.168.1.10'}}));rejected(request({socket:{remoteAddress:'8.8.8.8'}}));
+  for(const name of ['x-forwarded-proto','x-forwarded-host','x-forwarded-for','x-real-ip','forwarded'])rejected(request({headers:{[name]:'https'}}));
 });
 test('无账号后台保护读写接口、预览和历史；正常本机页面与导出不依赖Cookie',()=>{
   for(const route of ['/api/state','/api/export/v-one','/preview/v-one/','/history/v-one/']){

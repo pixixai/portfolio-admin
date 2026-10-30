@@ -20,6 +20,8 @@ import { folders, validFolder, createFolder, ensureFolderPath, arrangeMedia } fr
 import { mediaDeletePlan, deleteMediaItems } from './lib/media-delete.mjs';
 import {releaseRetention} from './lib/release-retention.mjs';
 import {validateLocalRequest} from './lib/local-access.mjs';
+import {runtimeMode,validateCloudRequest} from './lib/runtime-mode.mjs';
+import {cloudAuth,loginPage} from './lib/cloud-auth.mjs';
 import {deploymentPlatforms,deploymentTarget,inspectDeployment,deploymentPackage} from './lib/deployment.mjs';
 import {RemoteSync,remoteProfile} from './lib/remote-sync.mjs';
 import {UserBackup} from './lib/user-backup.mjs';
@@ -39,15 +41,16 @@ async function jsonBody(request) {
 }
 function safePath(base, relative) { const target = path.resolve(base, '.' + relative); if (target !== base && !target.startsWith(base + path.sep)) fail('不能访问此路径。', 403); return target; }
 
-export async function createApplication({ dataDir, rendererDir = path.join(root, 'renderer'), remoteOptions } = {}) {
-  dataDir = await resolveRuntimeData(root, { dataDir, onMigration: ({from,to}) => console.log(`旧运行数据已复制至：${to}\n原数据保留备份：${from}`) });
+export async function createApplication({ dataDir, rendererDir = path.join(root, 'renderer'), remoteOptions, env=process.env, runtime:runtimeInput={}, authOptions } = {}) {
+  const runtime=runtimeMode({root,dataDir,env,runtime:runtimeInput}),cloud=runtime.mode==='cloud',auth=cloud?cloudAuth(runtime,authOptions):null;
+  dataDir = await resolveRuntimeData(root, { dataDir:cloud?runtime.dataDir:dataDir,env, onMigration: ({from,to}) => console.log(`旧运行数据已复制至：${to}\n原数据保留备份：${from}`) });
   await mkdir(dataDir, { recursive: true });
   dataDir = await realpath(dataDir);
-  let store = await openStore(dataDir, rendererDir), publisher = new Publisher(store, rendererDir);
+  let store = await openStore(dataDir, rendererDir), publisher = new Publisher(store, rendererDir,{publishedUrl:cloud?runtime.siteOrigin+'/':null});
   syncSpaceVisibility(store);
   let remoteSync=new RemoteSync(store,remoteOptions);
   let importer=new ProjectImporter(store,publisher),activeWrites=0;
-  async function reloadServices(){store=await openStore(dataDir,rendererDir);syncSpaceVisibility(store);publisher=new Publisher(store,rendererDir);remoteSync=new RemoteSync(store,remoteOptions);importer=new ProjectImporter(store,publisher);await publisher.bootstrap();}
+  async function reloadServices(){store=await openStore(dataDir,rendererDir);syncSpaceVisibility(store);publisher=new Publisher(store,rendererDir,{publishedUrl:cloud?runtime.siteOrigin+'/':null});remoteSync=new RemoteSync(store,remoteOptions);importer=new ProjectImporter(store,publisher);await publisher.bootstrap();}
   const backups=new UserBackup({getStore:()=>store,renderer:rendererDir,isBusy:()=>publisher.busy||remoteSync.busy||activeWrites>0,activate:stage=>activateUserData(dataDir,stage,{close:()=>store.close(),reopen:reloadServices})});
   await publisher.bootstrap();
   const respond = (response, value, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); response.end(JSON.stringify(value)); };
@@ -80,12 +83,13 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
   }
   function state() {
     return {
+      runtime:{mode:runtime.mode,...(cloud?{siteUrl:runtime.siteOrigin+'/',adminUser:runtime.username}:{})},
       projects: store.projects(), folders: folders(store), media: store.media().map(asset => ({ ...asset, url: `/api/media/${asset.id}/file`, references: store.references(asset.id) })),
       settings: store.get('settingsDraft'), settingsLive: store.get('settingsLive'), settingsRevision: store.get('settingsRevision'),
       currentRelease: store.get('currentRelease'), releases: store.releases().map(({ snapshot, ...release }) => ({ ...release, count: snapshot.projects.length,deployment:snapshot.deployment||{platform:'generic',projectName:'portfolio-site'} })),
       releaseRetention: releaseRetention(store),
-      capabilities:{backgroundLoop:true,sidebarPreview:true,platformExport:true,remoteSync:true,userBackup:true,privateSpaces:true,spaceGroups:true,unifiedPreview:true,spaceCodes:true,spaceFormOrigin:true,spacePin:true,spaceAutoPublic:false,displaySpaces:true,shareSpaces:true},
-      spaces:{...spaceState(store),siteUrl:store.get('spacesSiteUrl')||''},
+      capabilities:{backgroundLoop:true,sidebarPreview:true,platformExport:true,remoteSync:!cloud,userBackup:true,privateSpaces:true,spaceGroups:true,unifiedPreview:true,spaceCodes:true,spaceFormOrigin:true,spacePin:true,spaceAutoPublic:false,displaySpaces:true,shareSpaces:true},
+      spaces:{...spaceState(store),siteUrl:cloud?runtime.siteOrigin:store.get('spacesSiteUrl')||''},
       deploymentPlatforms,deploymentTarget:store.get('deploymentTarget')||{platform:'generic',projectName:'portfolio-site'},
       jobs: [...publisher.jobs.values()].slice(-10).reverse(),
     };
@@ -105,15 +109,32 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
   }
   const spaceGateways=new Map();
   const sidebarTargets=new Map();
-  async function serveSpace(request,response,folder,mount){const key=folder+'|'+mount;if(!spaceGateways.has(key)){if(spaceGateways.size>=30)spaceGateways.delete(spaceGateways.keys().next().value);spaceGateways.set(key,createSpaceGateway({directory:path.join(folder,'private'),mount}));}return spaceGateways.get(key)(request,response);}
+  async function serveSpace(request,response,folder,mount){const key=folder+'|'+mount;if(!spaceGateways.has(key)){if(spaceGateways.size>=30)spaceGateways.delete(spaceGateways.keys().next().value);spaceGateways.set(key,createSpaceGateway({directory:path.join(folder,'private'),mount,secure:cloud,trustProxy:cloud&&runtime.trustProxy}));}return spaceGateways.get(key)(request,response);}
+  const publicGateway=cloud?createSpaceGateway({directory:()=>path.join(dataDir,'releases',store.get('currentRelease'),'private'),publicDirectory:folder=>path.join(path.dirname(folder),'dist'),secure:true,trustProxy:runtime.trustProxy}):null;
+  const html=(response,value,status=200)=>{response.writeHead(status,{'Content-Type':'text/html; charset=utf-8'});response.end(value);};
   const server = http.createServer(async (request, response) => {
     request.setTimeout(120000,()=>{if(!request.complete)request.destroy();});
     response.setHeader('Cache-Control', 'no-store'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.setHeader('Referrer-Policy', 'same-origin');
-    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; frame-src 'self'; connect-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'");
+    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; frame-src 'self'; connect-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self'");
     let trackedWrite=false;
     try {
       const url = new URL(request.url, 'http://localhost'), pathname = decodeURIComponent(url.pathname);
-      validateLocalRequest(request,pathname);
+      if(cloud){
+        const role=validateCloudRequest(request,runtime);
+        if(role==='site'){if(backups.activating)fail('网站正在更新，请稍候。',503);return await publicGateway(request,response);}
+        response.setHeader('X-Robots-Tag','noindex, nofollow, noarchive');
+        if(pathname==='/login.css'&&['GET','HEAD'].includes(request.method))return await serve(request,response,path.join(root,'public'),'/login.css');
+        if(pathname==='/login'&&request.method==='GET'){if(auth.authenticated(request)){response.writeHead(303,{Location:'/'}).end();return;}return html(response,loginPage('',runtime.username));}
+        if(pathname==='/auth/login'&&request.method==='POST'){
+          if(!request.headers['content-type']?.startsWith('application/x-www-form-urlencoded'))fail('登录表单格式不正确。',415);
+          const form=new URLSearchParams((await body(request,8192)).toString()),result=await auth.login(request,response,form.get('username'),form.get('password'));
+          if(result.status!==200)return html(response,loginPage(result.error,String(form.get('username')||'').slice(0,40)),result.status);
+          response.writeHead(303,{Location:'/'}).end();return;
+        }
+        if(!auth.authenticated(request)){if(pathname.startsWith('/api/'))return respond(response,{error:'请先登录管理后台。',loginRequired:true},401);response.writeHead(303,{Location:'/login'}).end();return;}
+        if(pathname==='/api/auth/logout'&&request.method==='POST'){auth.logout(request,response);return respond(response,{ok:true});}
+        if(pathname.startsWith('/api/remote')||pathname==='/api/spaces/site-url'||pathname==='/api/spaces/server-config')fail('云端模式直接发布到本站，无需远程部署配置；域名由服务器配置管理。',409);
+      }else validateLocalRequest(request,pathname);
       const backupRoute=pathname.startsWith('/api/backups');
       if(backups.activating&&!/^\/api\/backups\/jobs\//.test(pathname))fail('正在切换恢复数据，请稍候。',503);
       if(!['GET','HEAD'].includes(request.method)&&!backupRoute){if(backups.busy)fail('正在备份或恢复数据，请完成后重试。',409);activeWrites++;trackedWrite=true;}
@@ -134,7 +155,7 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
         const input=await jsonBody(request);if(!/^[a-f0-9-]{36}$/.test(input.clientId||'')||!/^v-\d+-[a-f0-9]{8}$/.test(input.previewId||''))fail('预览标识格式不正确。');
         const folder=path.join(dataDir,'previews',input.previewId),meta=JSON.parse(await readFile(path.join(folder,'sidebar-preview.json'),'utf8'));
         if(meta.clientId!==input.clientId)fail('不能切换其他预览会话的内容。',403);
-        let target=sidebarTargets.get(input.clientId);if(!target){if(sidebarTargets.size>=64)fail('预览会话过多，请重启后台或关闭多余窗口后重试。',409);target={id:input.previewId};target.gateway=createSpaceGateway({directory:()=>path.join(dataDir,'previews',target.id,'private'),mount:'/draft/'+input.clientId+'/space'});sidebarTargets.set(input.clientId,target);}else target.id=input.previewId;
+        let target=sidebarTargets.get(input.clientId);if(!target){if(sidebarTargets.size>=64)fail('预览会话过多，请重启后台或关闭多余窗口后重试。',409);target={id:input.previewId};target.gateway=createSpaceGateway({directory:()=>path.join(dataDir,'previews',target.id,'private'),mount:'/draft/'+input.clientId+'/space',secure:cloud,trustProxy:cloud&&runtime.trustProxy});sidebarTargets.set(input.clientId,target);}else target.id=input.previewId;
         return respond(response,{url:'/draft/'+input.clientId+'/',previewId:input.previewId});
       }
       const draftMatch=pathname.match(/^\/draft\/([a-f0-9-]{36})(\/.*)$/);
@@ -321,8 +342,9 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
   // Large private backups may upload for longer than two minutes. Enforce
   // incoming-body inactivity and byte limits instead of an overall deadline.
   server.requestTimeout = 0;server.headersTimeout=60000;
-  return { server, get store(){return store;}, get publisher(){return publisher;}, get remoteSync(){return remoteSync;}, backups, dataDir, async close() { await new Promise(resolve => server.close(resolve)); store.close(); } };
+  return { server, get store(){return store;}, get publisher(){return publisher;}, get remoteSync(){return remoteSync;}, backups, dataDir, runtime:{mode:runtime.mode,...(cloud?{adminOrigin:runtime.adminOrigin,siteOrigin:runtime.siteOrigin}:{})}, async close() { await new Promise(resolve => server.close(resolve)); store.close(); } };
 }
+const cloudRuntime=app=>app.runtime.mode==='cloud';
 export async function startApplication({ port = Number(process.env.PORT || 4180), openBrowser = false, browserOpener = openDefaultBrowser, ...options } = {}) {
   // Detect an old running instance before migrating its data or bootstrapping.
   const probe = net.createServer();
@@ -333,12 +355,12 @@ export async function startApplication({ port = Number(process.env.PORT || 4180)
     await new Promise((resolve,reject) => { app.server.once('error',reject);app.server.listen(port,'127.0.0.1',resolve); });
   } catch (error) { app.store.close(); throw error; }
   const url = `http://127.0.0.1:${app.server.address().port}/`;
-  console.log(`后台管理系统：${url}\n展示副本：${url}site/\n运行数据：${app.dataDir}`);
-  if (openBrowser) browserOpener(url);
+  if(cloudRuntime(app))console.log(`运行模式：云端\n后台管理系统：${app.runtime.adminOrigin}/\n作品网站：${app.runtime.siteOrigin}/\n内部服务：${url}\n运行数据：${app.dataDir}`);
+  else{console.log(`后台管理系统：${url}\n展示副本：${url}site/\n运行数据：${app.dataDir}`);if(openBrowser)browserOpener(url);}
   return app;
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const app = await startApplication({openBrowser:process.argv.includes('--open-browser')}).catch(error=>{
+  const app = await startApplication({openBrowser:process.argv.includes('--open-browser'),runtime:{...(process.argv.includes('--local')?{mode:'local'}:process.argv.includes('--cloud')?{mode:'cloud'}:{})}}).catch(error=>{
     console.error(error.code==='EADDRINUSE'?'后台端口已被占用，请关闭原来的后台窗口后重试。':error.message);process.exit(1);
   });
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => { await app.close(); process.exit(0); });

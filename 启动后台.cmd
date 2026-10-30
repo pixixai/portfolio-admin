@@ -20,5 +20,5 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-node server.mjs --open-browser
+node server.mjs --local --open-browser
 pause

@@ -4,12 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs",
+    "start": "node server.mjs --local",
     "test": "node --test tests/*.test.mjs",
     "check": "node scripts-check.mjs",
     "build:editor": "node scripts/build-editor.mjs",
     "prestart": "npm run build:editor",
-    "pretest": "npm run build:editor"
+    "pretest": "npm run build:editor",
+    "configure:cloud": "node scripts/configure-cloud.mjs",
+    "prestart:cloud": "npm run build:editor",
+    "start:cloud": "node --env-file=.env.cloud server.mjs --cloud"
   },
   "engines": {
     "node": ">=22.13"

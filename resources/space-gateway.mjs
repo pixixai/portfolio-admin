@@ -40,12 +40,12 @@ export function createSpaceGateway({directory,mount='/space',secure=false,secret
         if(!['GET','HEAD'].includes(request.method))return reply(response,405,'不支持此操作。');
         if(!Object.hasOwn(catalog.publicFiles||{},name))return reply(response,404,'页面不存在。');
         response.removeHeader('X-Robots-Tag');response.setHeader('Cache-Control','public, max-age=0, must-revalidate');
-        return await serveFile(request,response,await safeFile(publicDirectory,name));
+        return await serveFile(request,response,await safeFile(typeof publicDirectory==='function'?await publicDirectory(folder):publicDirectory,name));
       }
       const parts=pathname.slice(mount.length+1).split('/'),id=parts.shift();if(!ids.test(id||''))return reply(response,404,'空间不存在。');
       const catalog=await loadCatalog(folder);
       const space=catalog.spaces?.find(item=>item.id===id&&item.enabled);if(!space)return reply(response,404,'空间不存在或已关闭。');
-      const login=(message='',locked=false)=>screen(message,locked,mount.slice(0,-6)+'/',requestedWork,space.access.codeLength===4);
+      const login=(message='',locked=false)=>screen(message,locked,mount.slice(0,-6)+'/',requestedWork,space.access?.codeLength===4);
       if(!pathname.startsWith(mount+'/'+id+'/')){response.writeHead(302,{Location:mount+'/'+id+'/'}).end();return true;}
       if(space.accessMode!=='public'&&secure&&(!trustProxy||request.headers['x-forwarded-proto']!=='https'))return reply(response,403,'请通过HTTPS访问分享空间。');
       const action=parts.join('/'),cookiePath=mount+'/'+id+'/';
@@ -63,7 +63,7 @@ export function createSpaceGateway({directory,mount='/space',secure=false,secret
         for await(const chunk of request){size+=chunk.length;if(size>2048)return reply(response,413,'请求过大。');body+=chunk.toString('utf8');}
         if(!String(request.headers['content-type']||'').startsWith('application/x-www-form-urlencoded'))return reply(response,415,'请求格式不正确。');
         const code=new URLSearchParams(body).get('code')||'';let matches=false;
-        if(space.access.codeLength===4?/^[0-9]{4}$/.test(code):code.length>=6&&code.length<=128){deriving++;try{const hash=await scrypt(code,Buffer.from(space.access.salt,'hex'),32,{N:32768,r:8,p:3,maxmem:64*1024**2});matches=equal(hash.toString('hex'),space.access.hash);}finally{deriving--;}}
+        if(space.access?.codeLength===4?/^[0-9]{4}$/.test(code):code.length>=6&&code.length<=128){deriving++;try{const hash=await scrypt(code,Buffer.from(space.access.salt,'hex'),32,{N:32768,r:8,p:3,maxmem:64*1024**2});matches=equal(hash.toString('hex'),space.access.hash);}finally{deriving--;}}
         if(!matches)return reply(response,401,login('访问码不正确，请重试。'));
         attempts.delete(key);const value=[id,Date.now()+8*3600000,randomBytes(12).toString('hex')].join('.');
         response.setHeader('Set-Cookie',`${cookieName(space)}=${value}.${sign(value,space)}; Path=${cookiePath}; HttpOnly; SameSite=Strict; Max-Age=28800${secure?'; Secure':''}`);
