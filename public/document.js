@@ -1,7 +1,7 @@
 let activeTextCursor = null, blockMenu = null, labelsMenuOpen = false, labelSearch = '', pendingDocumentFocus = null, blockMenuSuppressUntil = 0, selectedBlockId = null;
 let selectedDocumentBlocks = new Set(), documentTextRange = null, documentSelectionAnchor = null, documentSelectionPainting = false, documentPointerSelection = null, documentSelectionClick = false, documentSelectAllStage = null;
 const projectLabels = doc => [...new Set((Array.isArray(doc?.labels) ? doc.labels : [doc?.category, ...(doc?.tags || [])]).filter(label => label && label !== '未分类'))];
-const allLabelOptions = () => [...new Set([...db.settings.categories, ...db.projects.flatMap(row => projectLabels(row.draft))])].filter(label => label !== '未分类');
+const allLabelOptions = () => [...new Set([...(db.labelOrder||db.settings.categories), ...db.projects.flatMap(row => projectLabels(row.draft))])].filter(label => label !== '未分类');
 const labelTone = label => [...label].reduce((value, char) => value + char.charCodeAt(0), 0) % 6;
 const newTextBlock = (text = '') => ({ id: crypto.randomUUID(), type: 'text', text });
 const textBlock = block => block && ['text', 'heading', 'table'].includes(block.type);

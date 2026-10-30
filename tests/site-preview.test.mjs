@@ -20,7 +20,7 @@ async function fixture(t,{fakeBuild=false}={}){
   w.fetch=(url,options={})=>{if(url==='/api/preview'&&options.method==='POST')requests.push(JSON.parse(options.body));return fetch(new URL(url,base),options);};w.addEventListener('error',event=>errors.push(event.message));
   w.document.write(await readFile(path.join(root,'public/index.html'),'utf8'));w.eval((await Promise.all(['media-browser.js','editor.js','document-selection.js','document.js','site-preview.js','spaces.js','app.js'].map(file=>readFile(path.join(root,'public',file),'utf8')))).join('\n'));
   const $=selector=>w.document.querySelector(selector),click=selector=>{assert.ok($(selector),selector);$(selector).click();},input=(selector,value)=>{const node=$(selector);node.value=value;node.dispatchEvent(new w.Event('input',{bubbles:true}));};
-  await until(()=>$('.works-table'),'后台加载');return{app,base,w,$,click,input,builds,requests,errors};
+  await until(()=>$('.works-table'),'后台加载');assert.equal(w.PortfolioSitePreview.blocksRequest('/api/arrange','POST'),true);return{app,base,w,$,click,input,builds,requests,errors};
 }
 
 test('循环开关联动定格帧，保存、预览、发布与可恢复部署包保留循环设置',async t=>{

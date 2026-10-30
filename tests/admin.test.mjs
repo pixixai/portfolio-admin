@@ -310,7 +310,7 @@ test('独立管理系统完整工作流', async t => {
     let rows = [...window.document.querySelectorAll('tbody [data-row]')], firstId = rows[0].dataset.row;
     drag(rows[0].querySelector('[data-work-handle]'), rows[1]); await until(() => app.store.projects().filter(row => !row.deletedAt)[1].id === firstId, '列表拖拽保存');
     click('[data-view=cards]'); let cards = [...window.document.querySelectorAll('.work-cards [data-row]')]; const cardId = cards[0].dataset.row;
-    assert.equal(cards[0].getAttribute('draggable'), 'true'); assert.equal(cards[0].querySelector('[data-work-handle]'), null); drag(cards[0].querySelector('.work-card-cover'), cards[1]); await until(() => app.store.projects().filter(row => !row.deletedAt)[1].id === cardId, '缩略图拖拽保存');
+    assert.equal(cards[0].getAttribute('draggable'), 'true'); assert.ok(cards[0].querySelector('[data-work-handle]')); drag(cards[0].querySelector('.work-card-cover'), cards[1]); await until(() => app.store.projects().filter(row => !row.deletedAt)[1].id === cardId, '缩略图拖拽保存');
     assert.ok(motions.some(motion => motion.from.x || motion.from.y), '排序产生位置变化动画');
     click('.work-card [data-action=edit]'); await until(() => $('.editor-overlay'), '再次编辑'); $('.editor-overlay').dispatchEvent(new window.Event('pointerdown', { bubbles: true })); $('.editor-overlay').click(); await until(() => !$('.editor-overlay'), '点击空白关闭');
     click('.work-card [data-action=edit]'); await until(() => $('.editor-overlay'), '再次编辑'); window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await until(() => !$('.editor-overlay'), 'Escape关闭');

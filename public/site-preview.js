@@ -82,7 +82,7 @@ window.PortfolioSitePreview=(()=>{
       finally{work=null;}
     })();await work;
   }
-  const blocksRequest=(path,method)=>method==='POST'&&['/api/preview','/api/publish','/api/rollback','/api/import/commit'].includes(path)||method==='PUT'&&path==='/api/release-retention'||['POST','PUT','DELETE'].includes(method)&&(/^\/api\/spaces(?:\/|$)/.test(path)||/^\/api\/projects\/[^/]+\/spaces$/.test(path));
+  const blocksRequest=(path,method)=>method==='POST'&&['/api/preview','/api/publish','/api/rollback','/api/import/commit','/api/arrange'].includes(path)||method==='PUT'&&path==='/api/release-retention'||['POST','PUT','DELETE'].includes(method)&&(/^\/api\/spaces(?:\/|$)/.test(path)||/^\/api\/projects\/[^/]+\/spaces$/.test(path));
   async function beforeRequest(path,method){
     if(!blocksRequest(path,method))return null;
     manualRequests++;clearTimeout(timer);timer=null;

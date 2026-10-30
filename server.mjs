@@ -13,7 +13,8 @@ import { zipDirectory,packageLimit } from './lib/zip.mjs';
 import {ProjectImporter} from './lib/project-package.mjs';
 import { inspectMedia } from './lib/media.mjs';
 import { projectLabels } from './lib/labels.mjs';
-import {spacesDraft,spacesLive,spaceState,saveSpace,deleteSpace,syncSpaceVisibility,isPrivate,renameSpaceLabel,spaceDefinition,mainSpace,saveMainSpace,saveProjectSpaces} from './lib/spaces.mjs';
+import {arrangeContent} from './lib/arrange.mjs';
+import {spacesDraft,spacesLive,spaceState,saveSpace,deleteSpace,syncSpaceVisibility,isPrivate,renameSpaceLabel,spaceDefinition,mainSpace,saveMainSpace,saveProjectSpaces,globalLabelOrder} from './lib/spaces.mjs';
 import {createSpaceGateway} from './resources/space-gateway.mjs';
 import {spaceServerConfig} from './lib/space-server-config.mjs';
 import { folders, validFolder, createFolder, ensureFolderPath, arrangeMedia } from './lib/media-folders.mjs';
@@ -85,7 +86,7 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
     return {
       runtime:{mode:runtime.mode,...(cloud?{siteUrl:runtime.siteOrigin+'/',adminUser:runtime.username}:{})},
       projects: store.projects(), folders: folders(store), media: store.media().map(asset => ({ ...asset, url: `/api/media/${asset.id}/file`, references: store.references(asset.id) })),
-      settings: store.get('settingsDraft'), settingsLive: store.get('settingsLive'), settingsRevision: store.get('settingsRevision'),
+      settings: store.get('settingsDraft'), settingsLive: store.get('settingsLive'), settingsRevision: store.get('settingsRevision'),labelOrder:globalLabelOrder(store),
       currentRelease: store.get('currentRelease'), releases: store.releases().map(({ snapshot, ...release }) => ({ ...release, count: snapshot.projects.length,deployment:snapshot.deployment||{platform:'generic',projectName:'portfolio-site'} })),
       releaseRetention: releaseRetention(store),
       capabilities:{backgroundLoop:true,sidebarPreview:true,platformExport:true,remoteSync:!cloud,userBackup:true,privateSpaces:true,spaceGroups:true,unifiedPreview:true,spaceCodes:true,spaceFormOrigin:true,spacePin:true,spaceAutoPublic:false,displaySpaces:true,shareSpaces:true},
@@ -99,11 +100,11 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
     if (!Array.isArray(ids) || ids.length > 300 || new Set(ids).size !== ids.length) fail('请选择要发布的作品。');
     const rows = store.projects();
     const selected = ids.map(id => { const row = rows.find(row => row.id === id && !row.deletedAt); if (!row) fail('部分作品不存在。', 404); if (!row.draft.blocks.length && !row.draft.coverAssetId && !row.draft.description) fail(`“${row.draft.title}”还没有内容。`); return row; });
-    const snapshot = { settings: includeSettings ? store.get('settingsDraft') : store.get('settingsLive'), projects: rows.map(row => {const document=ids.includes(row.id)?row.draft:row.live;return document?{...document,...(row.draft.visibility?{visibility:row.draft.visibility}:{})}:null;}).filter(Boolean),deployment:target,spaces:spacesDraft(store).map(spaceDefinition),mainSpace:mainSpace(store) };
+    const snapshot = { settings: {...(includeSettings ? store.get('settingsDraft') : store.get('settingsLive')),categories:globalLabelOrder(store)}, projects: rows.map(row => {const document=ids.includes(row.id)?row.draft:row.live;return document?{...document,order:row.draft.order,...(row.draft.visibility?{visibility:row.draft.visibility}:{})}:null;}).filter(Boolean),deployment:target,spaces:spacesDraft(store).map(spaceDefinition),mainSpace:mainSpace(store) };
     return publisher.start('publish', snapshot, () => {
       for (const document of snapshot.projects) store.db.prepare('UPDATE projects SET live=? WHERE id=?').run(JSON.stringify(document), document.id);
       store.set('spacesLive',snapshot.spaces);store.set('mainSpaceLive',snapshot.mainSpace);
-      if (includeSettings) store.set('settingsLive', snapshot.settings);
+      store.set('settingsLive',snapshot.settings);
       store.set('deploymentTarget',target);
     }, `发布${selected.length}个作品${includeSettings ? '及站点设置' : ''}`,null,target);
   }
@@ -182,6 +183,10 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
         const document = validateProject(await jsonBody(request), null, store);
         return respond(response, store.createProject(document), 201);
       }
+      if(pathname==='/api/arrange'&&request.method==='POST'){
+        if(publisher.busy||remoteSync.busy)fail('正在发布或部署，请稍后排序或复制。',409);
+        return respond(response,arrangeContent(store,await jsonBody(request)));
+      }
       if (pathname === '/api/reorder' && request.method === 'POST') {
         const { ids } = await jsonBody(request), active = store.projects().filter(row => !row.deletedAt);
         if (!Array.isArray(ids) || ids.length !== active.length || new Set(ids).size !== ids.length || active.some(row => !ids.includes(row.id))) fail('排序列表已经变化，请刷新再试。', 409);
@@ -229,16 +234,16 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
         if (input.revision !== store.get('settingsRevision')) fail('标签已在别处修改，请刷新后重试。', 409);
         if (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 40) fail('标签名称需要1～40个字符。');
         const name = input.name.trim(), removing = request.method === 'DELETE', renaming = request.method === 'PUT';
-        const affected = store.projects().filter(row => projectLabels(row.draft).includes(name));
+        const affected = store.projects().filter(row => projectLabels(row.draft).includes(name)),currentOrder=globalLabelOrder(store);
         if (renaming) {
-          if (!settings.categories.includes(name) && !affected.length) fail('标签不存在。', 404);
+          if (!currentOrder.includes(name) && !affected.length) fail('标签不存在。', 404);
           if (typeof input.newName !== 'string' || !input.newName.trim() || input.newName.length > 40) fail('标签名称需要1～40个字符。');
           const newName = input.newName.trim();
           if (newName === name) return respond(response, { ok: true, affected: 0 });
           if (newName === '未分类') fail('请选择一个具体的标签名称。');
-          if (settings.categories.includes(newName) || store.projects().some(row => projectLabels(row.draft).includes(newName))) fail('已存在同名标签，请使用其他名称。', 409);
-          if (!settings.categories.includes(name) && settings.categories.length >= 200) fail('最多支持200个标签。');
-          settings.categories = settings.categories.includes(name) ? settings.categories.map(value => value === name ? newName : value) : [...settings.categories, newName];
+          if (currentOrder.includes(newName)) fail('已存在同名标签，请使用其他名称。', 409);
+          if (!currentOrder.includes(name) && currentOrder.filter(label=>label!=='未分类').length >= 200) fail('最多支持200个标签。');
+          settings.categories = currentOrder.map(value=>value===name?newName:value);
           store.transaction(() => {
             for (const row of affected) {
               const labels = projectLabels(row.draft).map(label => label === name ? newName : label);
@@ -249,11 +254,11 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
           });
           return respond(response, { ok: true, affected: affected.length });
         }
-        if (removing && !settings.categories.includes(name) && !affected.length) fail('标签不存在。', 404);
-        if (!removing && settings.categories.includes(name)) return respond(response, { ok: true });
+        if (removing && !currentOrder.includes(name) && !affected.length) fail('标签不存在。', 404);
+        if (!removing && currentOrder.includes(name)) return respond(response, { ok: true });
         if (!removing && name === '未分类') fail('请选择一个具体的标签名称。');
-        if (!removing && settings.categories.length >= 200) fail('最多支持200个标签。');
-        settings.categories = removing ? settings.categories.filter(value => value !== name) : [...settings.categories, name];
+        if (!removing && currentOrder.filter(label=>label!=='未分类').length >= 200) fail('最多支持200个标签。');
+        settings.categories = removing ? currentOrder.filter(value => value !== name) : [...currentOrder, name];
         store.transaction(() => {
           if (removing) for (const row of affected) { const labels = projectLabels(row.draft).filter(label => label !== name); store.db.prepare('UPDATE projects SET draft=?,revision=revision+1,updatedAt=? WHERE id=?').run(JSON.stringify({ ...row.draft, labels, tags: labels, category: labels[0] || '未分类' }), now(), row.id); }
           if(removing&&spacesDraft(store).some(space=>space.groups.some(group=>group.label===name))){store.set('spacesDraft',spacesDraft(store).map(space=>renameSpaceLabel(space,name,null)));store.set('spacesRevision',(store.get('spacesRevision')||1)+1);}
@@ -287,7 +292,7 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
         }
       }
       if (pathname === '/api/preview' && request.method === 'POST') {
-        const input = await jsonBody(request), snapshot = { settings: input.settings ? validateSettings(input.settings,store) : store.get('settingsDraft'), projects: store.projects().filter(row => !row.deletedAt).map(row => row.draft),spaces:spacesDraft(store),mainSpace:mainSpace(store) };
+        const input = await jsonBody(request), snapshot = { settings: {...(input.settings ? validateSettings(input.settings,store) : store.get('settingsDraft')),categories:globalLabelOrder(store)}, projects: store.projects().filter(row => !row.deletedAt).map(row => row.draft),spaces:spacesDraft(store),mainSpace:mainSpace(store) };
         if(input.sidebarScope!=null&&input.sidebarScope!=='public'&&!spacesDraft(store).some(space=>space.id===input.sidebarScope))fail('所选预览空间不存在。',404);
         if (input.project) { const row = store.project(input.project.id); if (!row || row.deletedAt) fail('作品不存在。', 404); const project = validateProject(input.project, row.draft, store); snapshot.projects = snapshot.projects.map(doc => doc.id === project.id ? project : doc); if(input.sidebarScope==null)snapshot.previewProjectId=project.id; }
         let sidebar=null;

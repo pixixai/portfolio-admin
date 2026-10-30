@@ -11,8 +11,9 @@ function renderCategoryInput() {
   const state = categoryEditing;
   return `<form class="category-inline-form" data-category-editor><input class="category-inline-input" aria-label="${state.original === null ? '新标签名称' : '修改标签名称'}" maxlength="40" placeholder="输入标签名称" value="${esc(state.value)}" ${state.saving ? 'disabled' : ''} style="width:${Math.max(8, [...state.value].length * 1.6 + 2)}ch" autocomplete="off"><button class="category-inline-done" type="submit" aria-label="完成输入" title="完成输入" ${state.saving ? 'disabled' : ''}>${icon('check')}</button>${state.error ? `<span class="category-inline-error" role="alert">${esc(state.error)}</span>` : ''}</form>`;
 }
+function arrangeHandle(kind,label){return `<button type="button" class="arrange-handle" data-arrange-handle="${kind}" ${kind==='work'?'data-work-handle':''} draggable="true" aria-label="拖动${esc(label)}排序" title="${['tag','space','work'].includes(kind)?'拖动排序 · Alt 拖动复制':'拖动排序'}">${icon('drag')}</button>`;}
 function renderCategories() {
-  return `<div class="category-manager" aria-label="作品标签"><span class="category-caption">标签</span><button class="category-chip ${!category ? 'active' : ''}" data-action="filter-category" data-category="">全部</button>${allLabelOptions().map(name => categoryEditing?.original === name ? renderCategoryInput() : `<span class="category-wrap"><button class="category-chip ${category === name ? 'active' : ''}" data-action="filter-category" data-category="${esc(name)}" title="双击修改标签名称">${esc(name)}<small>${activeProjects().filter(row => projectLabels(row.draft).includes(name)).length}</small></button><button class="category-delete" data-action="delete-category" data-name="${esc(name)}" aria-label="删除标签 ${esc(name)}">${icon('close')}</button></span>`).join('')}${categoryEditing?.original === null ? renderCategoryInput() : `<button class="category-chip add" data-action="add-category" aria-label="新增标签">${icon('plus')}</button>`}</div>`;
+  return `<div class="category-manager" aria-label="作品标签"><span class="category-caption">标签</span><button class="category-chip ${!category ? 'active' : ''}" data-action="filter-category" data-category="">全部</button>${allLabelOptions().map(name => categoryEditing?.original === name ? renderCategoryInput() : `<span class="category-wrap" data-arrange-item="tag" data-arrange-id="${esc(name)}"><button data-arrange-grip="tag" draggable="true" class="category-chip ${category === name ? 'active' : ''}" data-action="filter-category" data-category="${esc(name)}" title="拖动排序，Alt 拖动复制，双击修改标签名称">${esc(name)}<small>${activeProjects().filter(row => projectLabels(row.draft).includes(name)).length}</small></button><button class="category-delete" data-action="delete-category" data-name="${esc(name)}" aria-label="删除标签 ${esc(name)}">${icon('close')}</button></span>`).join('')}${categoryEditing?.original === null ? renderCategoryInput() : `<button class="category-chip add" data-action="add-category" aria-label="新增标签">${icon('plus')}</button>`}</div>`;
 }
 function refreshCategories(focus = false) {
   const manager = $('.category-manager'); if (!manager) return;
@@ -168,7 +169,7 @@ function updateSortMarker() {
 function clearPointerSort() {
   if (touchSort?.grip.hasPointerCapture?.(touchSort.pointer)) touchSort.grip.releasePointerCapture(touchSort.pointer);
   touchSort = null; cancelAnimationFrame(sortScrollFrame); sortScrollFrame = 0;
-  document.body.classList.remove('block-dragging'); $('#block-drag-preview')?.remove(); $('#block-drop-marker')?.remove();
+  document.body.classList.remove('block-dragging','work-copying'); $('#block-drag-preview')?.remove(); $('#block-drop-marker')?.remove();
 }
 function pointerSortAt(x, y) {
   if (!sorting) return;
@@ -185,10 +186,10 @@ function pointerSortAt(x, y) {
   } else {
     // Pointer capture keeps the event on the original card/handle. Hit-test the
     // current layout instead, including the gaps between thumbnail cards.
-    const nodes = sortNodes(sorting.parent).filter(node => !sorting.members.includes(node));
+    const nodes = sortNodes(sorting.parent).filter(node => sorting.copy || !sorting.members.includes(node));
     const grid = sorting.parent.classList.contains('work-cards');
     const contains = node => { const rect = node.getBoundingClientRect(); return y >= rect.top && y <= rect.bottom && (!grid || x >= rect.left && x <= rect.right); };
-    if (!sorting.members.some(contains)) {
+    if (sorting.copy || !sorting.members.some(contains)) {
       target = nodes.find(contains);
       if (!target) {
         const distance = node => { const rect = node.getBoundingClientRect(); return Math.hypot(grid ? x - (rect.left + rect.right) / 2 : 0, y - (rect.top + rect.bottom) / 2); };
@@ -238,15 +239,33 @@ function beginSort(node, kind) {
   const selectedIds = kind === 'block' ? new Set(documentSelectedIds()) : selected;
   const key = kind === 'block' ? 'block' : 'row';
   const members = selectedIds.has(node.dataset[key]) ? nodes.filter(item => selectedIds.has(item.dataset[key])) : [node];
-  sorting = { node, members, kind, parent: node.parentElement, order: nodes.map(item => item.dataset.row || item.dataset.block), selectionBefore, dropped: false };
+  sorting = { node, members, kind, parent: node.parentElement, order: nodes.map(item => item.dataset.row || item.dataset.block), selectionBefore, dropped: false, copy:false };
   if (kind === 'block') { closeBlockMenu(); selectedDocumentBlocks = new Set(members.map(item => item.dataset.block)); documentTextRange = null; selectedBlockId = node.dataset.block; window.getSelection()?.removeAllRanges(); paintDocumentSelection(); }
   members.forEach(item => item.classList.add('sorting-source')); if (kind === 'work') { workClickSuppressUntil = Infinity; ensureSortMarker(); } return true;
+}
+function setWorkCopy(altKey) {
+  if(sorting?.kind!=='work')return;
+  const next=Boolean(altKey);
+  if(sorting.copy!==next){
+    const nodes=new Map(sortNodes(sorting.parent).map(node=>[node.dataset.row,node]));
+    sorting.order.forEach(id=>sorting.parent.append(nodes.get(id)));
+    sorting.copy=next;
+  }
+  document.body.classList.toggle('work-copying',next);
+  const preview=$('#block-drag-preview');if(preview)preview.textContent=(next?'＋ 复制':'移动')+' '+sorting.members.length+' 件作品';
 }
 async function commitSort() {
   if (!sorting) return;
   const current = sorting; sorting = null; current.members.forEach(item => item.classList.remove('sorting-source'));
   $('#block-drop-marker')?.remove(); if (current.kind === 'work') workClickSuppressUntil = Date.now() + 350;
   const ids = sortNodes(current.parent).map(item => item.dataset.row || item.dataset.block);
+  if(current.kind==='work'&&current.copy){
+    if(!current.drop)return;
+    sortSaving=true;
+    try{await api('/api/arrange','POST',{kind:'work',ids:current.members.map(node=>node.dataset.row),visibleIds:current.order,targetId:current.drop.target.dataset.row,after:current.drop.after,copy:true,revisions:activeProjects().map(row=>({id:row.id,revision:row.revision}))});await loadState();toast('作品副本已创建，当前为草稿');}catch(error){await loadState();throw error;}finally{sortSaving=false;document.body.classList.remove('work-copying');}
+    return;
+  }
+  document.body.classList.remove('work-copying');
   if (ids.join('|') === current.order.join('|')) return;
   if (current.kind === 'block') { blockMenuSuppressUntil = Date.now() + 300; const lookup = new Map(editor.blocks.map(block => [block.id, block])); editor.blocks = ids.map(id => lookup.get(id)); renumberDocumentLists(); changed(); render(); document.querySelector(`[data-block="${current.node.dataset.block}"] [data-block-handle]`)?.focus({ preventScroll: true }); return; }
   // Preserve hidden/filtered projects in their existing slots.
@@ -274,12 +293,12 @@ function cancelSort() {
   if (current.selectionBefore) { selectedDocumentBlocks = new Set(current.selectionBefore.ids); documentTextRange = current.selectionBefore.range; selectedBlockId = current.selectionBefore.active; documentSelectionAnchor = current.selectionBefore.anchor; paintDocumentSelection(); }
 }
 function sortOver(target, x, y) {
-  if (!sorting || sorting.members.includes(target) || target.parentElement !== sorting.parent) return;
+  if (!sorting || !sorting.copy && sorting.members.includes(target) || target.parentElement !== sorting.parent) return;
   const rect = target.getBoundingClientRect();
   const sameRow = sorting.kind === 'work' && sorting.parent.classList.contains('work-cards');
   const after = sameRow ? y > rect.bottom || (y >= rect.top && x > rect.left + rect.width / 2) : y > rect.top + rect.height / 2;
   if (sorting.kind === 'work') sorting.drop = { target, after };
-  moveWithAnimation(sorting.node, target, after);
+  if(!sorting.copy)moveWithAnimation(sorting.node, target, after);
   updateSortMarker();
 }
 document.addEventListener('dragstart', event => {
@@ -287,14 +306,14 @@ document.addEventListener('dragstart', event => {
   const grip = event.target.closest('[data-block-handle]'), row = event.target.closest('[data-row][draggable]');
   const node = grip?.closest('[data-block]') || row;
   if (!node || !beginSort(node, grip ? 'block' : 'work')) return;
-  event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', grip ? grip.dataset.blockId : row.dataset.row);
+  setWorkCopy(event.altKey); event.dataTransfer.effectAllowed = grip ? 'move' : 'copyMove'; event.dataTransfer.setData('text/plain', grip ? grip.dataset.blockId : row.dataset.row);
 }, true);
 document.addEventListener('dragover', event => {
-  if (sorting) { event.preventDefault(); const node = event.target.closest(sorting.kind === 'block' ? '[data-block]' : '[data-row]'); if (node) sortOver(node, event.clientX, event.clientY); }
+  if (sorting) { event.preventDefault(); setWorkCopy(event.altKey);if(sorting.kind==='work'&&event.dataTransfer)event.dataTransfer.dropEffect=sorting.copy?'copy':'move'; const node = event.target.closest(sorting.kind === 'block' ? '[data-block]' : '[data-row]'); if (node) sortOver(node, event.clientX, event.clientY); }
   else if (event.target.closest('#editor-dropzone') && event.dataTransfer?.types?.includes('Files')) { event.preventDefault(); $('#editor-dropzone').classList.add('over'); }
 }, true);
 document.addEventListener('drop', event => {
-  if (sorting) { event.preventDefault(); commitSort().catch(error => toast(error.message, true)); }
+  if (sorting) { event.preventDefault(); setWorkCopy(event.altKey);if(!event.target.closest(sorting.kind==='block'?'[data-block],#editor-dropzone':'#works-results')){cancelSort();return;} commitSort().catch(error => toast(error.message, true)); }
   else if (editor && event.dataTransfer?.files?.length && event.target.closest('#editor-dropzone')) { event.preventDefault(); $('#editor-dropzone').classList.remove('over'); uploadFiles([...event.dataTransfer.files], { projectId: editor.id }).then(assets => { if (assets.length) addImages(assets); }).catch(error => toast(error.message, true)); }
 }, true);
 document.addEventListener('dragend', cancelSort);
@@ -329,10 +348,10 @@ document.addEventListener('pointermove', event => {
       const preview = document.createElement('div'); preview.id = 'block-drag-preview'; preview.textContent = sorting.members.length > 1 ? `移动 ${sorting.members.length} ${sorting.kind === 'work' ? '件作品' : '个内容块'}` : touchSort.node.querySelector('.work-card-title, .work-title, .block-file-name')?.textContent || touchSort.node.querySelector('.rich-editor')?.textContent.slice(0, 32) || '移动内容块'; document.body.append(preview);
       ensureSortMarker(); sortScrollFrame = requestAnimationFrame(autoScrollSort);
     }
-    if (sorting) pointerSortAt(event.clientX, event.clientY);
+    if (sorting) {setWorkCopy(event.altKey);pointerSortAt(event.clientX, event.clientY);}
   }
 }, { passive: false, capture: true });
-document.addEventListener('pointerup', event => { if (cropPan?.pointer === event.pointerId) cropPan = null; if (touchSort?.pointer === event.pointerId) { if (sorting) { event.preventDefault(); blockMenuSuppressUntil = Date.now() + 350; clearPointerSort(); commitSort().catch(error => toast(error.message, true)); } else clearPointerSort(); } }, true);
+document.addEventListener('pointerup', event => { if (cropPan?.pointer === event.pointerId) cropPan = null; if (touchSort?.pointer === event.pointerId) { if (sorting) {setWorkCopy(event.altKey);if(sorting.kind==='work'&&document.elementFromPoint){const over=document.elementFromPoint(event.clientX,event.clientY);if(over&&!over.closest('#works-results')){cancelSort();return;}} event.preventDefault(); blockMenuSuppressUntil = Date.now() + 350; clearPointerSort(); commitSort().catch(error => toast(error.message, true)); } else clearPointerSort(); } }, true);
 document.addEventListener('pointercancel', () => { cropPan = null; touchSort = null; cancelSort(); });
 
 document.addEventListener('click', event => {
@@ -344,6 +363,7 @@ document.addEventListener('click', event => {
 document.addEventListener('input', event => { if (event.target.matches('[data-block-field=text]')) growText(event.target); });
 document.addEventListener('click', event => { if (editorBackdropDown && event.target.matches('[data-editor-overlay]') && !$('#dialog').open) closeEditor().catch(error => toast(error.message, true)); editorBackdropDown = false; });
 document.addEventListener('keydown', event => {
+  if(sorting?.kind==='work'&&event.key==='Alt'){event.preventDefault();setWorkCopy(true);if(touchSort)pointerSortAt(touchSort.x,touchSort.y);return;}
   if ((sorting || touchSort) && event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); cancelSort(); return; }
   if (event.target.closest?.('[data-block-handle]') && event.altKey && ['ArrowUp', 'ArrowDown'].includes(event.key)) {
     event.preventDefault(); const node = event.target.closest('[data-block]'); if (!beginSort(node, 'block')) return;
@@ -355,3 +375,5 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Escape') { event.preventDefault(); closeEditor().catch(error => toast(error.message, true)); }
   if (event.key === 'Tab') { const nodes = [...$('.editor-shell').querySelectorAll('button,input,select,textarea,a[href],[tabindex="0"]'), ...(window.PortfolioSitePreview?.isOpen()?[...$('#site-preview-panel').querySelectorAll('button,a[href],iframe')]:[])].filter(node => !node.disabled && !node.closest('[hidden]')); const first = nodes[0], last = nodes.at(-1); if (event.shiftKey && (document.activeElement === first || document.activeElement === $('.editor-shell'))) { event.preventDefault(); last?.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); } }
 });
+
+document.addEventListener('keyup',event=>{if(sorting?.kind==='work'&&event.key==='Alt'){setWorkCopy(false);if(touchSort)pointerSortAt(touchSort.x,touchSort.y);}});

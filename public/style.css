@@ -322,4 +322,21 @@ body.editor-open{overflow:hidden}
 
 .space-code-pending{font-size:10px;color:#91a0b6;white-space:nowrap}
 
+/* Drag grips reserve their space and appear on hover or keyboard focus. */
+.arrange-handle{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:18px;height:24px;padding:0;border:0;background:transparent;color:#97a8c0;opacity:0;cursor:grab;touch-action:none;transition:opacity .15s,color .15s}
+.arrange-handle svg{width:13px;height:17px;pointer-events:none}.arrange-handle:hover{color:#4d80c5}.arrange-handle:focus-visible{opacity:1;outline:2px solid #9ab8e2;outline-offset:2px}
+[data-arrange-grip]{cursor:grab;touch-action:none}[data-arrange-grip]:focus-visible{outline:2px solid #9ab8e2;outline-offset:2px}
+.share-label-wrap{position:relative;display:inline-flex}
+.category-wrap:hover>.arrange-handle,.category-wrap:focus-within>.arrange-handle,.share-space-tab-wrap:hover>.arrange-handle,.share-space-tab-wrap:focus-within>.arrange-handle,.share-label-wrap:hover>.arrange-handle,.share-label-wrap:focus-within>.arrange-handle,.space-column-head:hover>.arrange-handle,.space-column-head:focus-within>.arrange-handle,.space-work:hover>.arrange-handle,.space-work:focus-within>.arrange-handle,.works-table tr:hover .arrange-handle,.works-table tr:focus-within .arrange-handle,.work-card:hover .arrange-handle,.work-card:focus-within .arrange-handle,.content-arrange-source .arrange-handle,.sorting-source .arrange-handle{opacity:1}
+.space-column-head>strong{flex:1;min-width:0}.space-column-head>.arrange-handle{margin-left:-4px}.space-work>.arrange-handle{margin-left:-5px;margin-right:-4px}
+.work-card-grip{position:absolute;top:10px;left:40px;z-index:4}.work-card-grip>.arrange-handle{color:#fff;filter:drop-shadow(0 1px 2px #0008)}
+.content-arrange-source{opacity:.45}.content-copying .content-arrange-source,.work-copying .sorting-source{opacity:1}.content-arranging,.content-arranging *{user-select:none!important;cursor:grabbing!important}.content-copying,.content-copying *,.work-copying,.work-copying *{cursor:copy!important}
+#content-arrange-marker{position:fixed;z-index:2400;background:#4385f5;border-radius:1px;pointer-events:none;box-shadow:0 0 0 1px #ffffff85}
+#content-arrange-preview{position:fixed;z-index:2401;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none;padding:8px 12px;border:1px solid #c7d8f0;border-radius:6px;background:#fff;color:#5476a7;box-shadow:0 5px 18px #35577b25;font-size:12px}
+.content-arrange-gap{display:block;box-sizing:border-box;flex:none;min-width:12px;border:1px dashed #8eb1e6;border-radius:5px;background:#eaf2ff88;pointer-events:none;color:#7191ba;overflow:hidden;font-size:11px;padding:5px}
+.space-column-body{min-height:84px}.space-column-body.has-arrange-gap>.space-column-empty{display:none}.space-column-body>.content-arrange-gap{display:flex;align-items:center;padding:9px 12px}
+.space-column.content-arrange-destination{box-shadow:inset 0 0 0 2px #83ace7;background:#f5f9ff}.space-column.content-arrange-invalid{box-shadow:inset 0 0 0 2px #d7a2a2;background:#fffafa}.content-arrange-target-member{opacity:.45}
+#content-arrange-preview.is-label-change{max-width:440px;border-color:#8fb2e4;color:#416da9}#content-arrange-preview.is-invalid{border-color:#dab2b2;color:#ad7070}.arrange-undo{border:0;background:transparent;color:#5184c9;font:inherit;font-size:12px;padding:2px 4px;white-space:nowrap}.arrange-undo:hover{text-decoration:underline;text-underline-offset:3px}.arrange-undo:disabled{opacity:.6;cursor:wait}
+@media(hover:none){.arrange-handle{opacity:1}.drag-handle.arrange-handle{display:inline-flex}}
+
 .cloud-session-notice{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:5000;max-width:calc(100vw - 40px);padding:13px 18px;background:#fff6df;border:1px solid #e8d8ac;border-radius:7px;color:#887044;font-size:12px;box-shadow:0 6px 22px #31456013}.cloud-session-notice a{color:#557fb9;text-decoration:underline;text-underline-offset:3px}

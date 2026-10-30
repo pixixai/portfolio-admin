@@ -66,13 +66,14 @@ function projectUrl(project, prefix = "") {
 }
 const labelsFor = project => [...new Set((project.labels || [project.category, ...project.tags]).filter(label => label && (label !== '未分类'||site.spaceGrouping)))];
 
+function labelOrdersFor(project){return Object.fromEntries((site.spaceProjectOrder||[]).filter(group=>group.ids.includes(project.id)).map(group=>[group.label,group.ids.indexOf(project.id)]));}
 function card(project, prefix = "", related = false) {
   const crop = project.coverCrop;
   const cropStyle = crop ? ` style="object-position:${crop.x * 100}% ${crop.y * 100}%;transform:scale(${crop.zoom});transform-origin:${crop.x * 100}% ${crop.y * 100}%"` : '';
   const image = project.coverAsset
     ? `<img src="${assetUrl(project.coverAsset, prefix)}" width="${project.coverAsset.width}" height="${project.coverAsset.height}" loading="lazy" decoding="async"${cropStyle} alt="${e(project.title)}作品封面">`
     : `<div class="cover-text"><p>${e(project.english)}</p><strong>${e(project.title)}</strong><p>${e(project.coverText)}</p></div>`;
-  return `<a class="${related ? "related-card" : "project-card"}" href="${projectUrl(project, prefix)}" data-project-id="${project.id}" data-ratio="${project.coverRatio}" data-cover-source="${project.coverSource}" data-labels="${e(JSON.stringify(labelsFor(project)))}" aria-label="查看 ${e(project.title)}"><div class="card-image">${image}<div class="card-overlay"><p class="card-category">${e(labelsFor(project).join(' · '))}</p><${related ? "h4" : "h2"} class="card-title">${e(project.title)}</${related ? "h4" : "h2"}></div></div></a>`;
+  return `<a class="${related ? "related-card" : "project-card"}" href="${projectUrl(project, prefix)}" data-project-id="${project.id}" data-ratio="${project.coverRatio}" data-cover-source="${project.coverSource}" data-labels="${e(JSON.stringify(labelsFor(project)))}" data-label-orders="${e(JSON.stringify(labelOrdersFor(project)))}" aria-label="查看 ${e(project.title)}"><div class="card-image">${image}<div class="card-overlay"><p class="card-category">${e(labelsFor(project).join(' · '))}</p><${related ? "h4" : "h2"} class="card-title">${e(project.title)}</${related ? "h4" : "h2"}></div></div></a>`;
 }
 
 try {
@@ -171,6 +172,7 @@ try {
         tags: project.tags,
         labels: labelsFor(project),
         order: project.order,
+        labelOrders: labelOrdersFor(project),
         url: projectUrl(project),
         cover: project.coverAsset ? assetUrl(project.coverAsset) : null,
         coverRatio: project.coverRatio,

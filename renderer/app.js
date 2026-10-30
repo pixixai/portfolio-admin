@@ -8,6 +8,8 @@ const baseTitle = document.title;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const grid = $("#grid");
 const cards = [...grid.querySelectorAll(".project-card")];
+const originalCardOrder=new Map(cards.map((card,i)=>[card,i]));
+const cardLabelOrders=new Map(cards.map(card=>[card,JSON.parse(card.dataset.labelOrders||'{}')]));
 const filters = $("#filters");
 const works = $("#works");
 const tools = works.querySelector(".work-tools");
@@ -99,6 +101,8 @@ function filterProjects(category, preserveToolbar = false) {
     if (buttons.some(button => button.dataset.category === category && button.getAttribute("aria-pressed") === "true")) return;
     pendingFilterAnchor = { top: Math.max(0, tools.getBoundingClientRect().top) };
   }
+  cards.sort((a,b)=>category==='全部作品'?originalCardOrder.get(a)-originalCardOrder.get(b):(cardLabelOrders.get(a)[category]??Infinity)-(cardLabelOrders.get(b)[category]??Infinity)||originalCardOrder.get(a)-originalCardOrder.get(b));
+  cards.forEach(card=>grid.append(card));
   cards.forEach((card) => {
     const labels = card.dataset.labels ? JSON.parse(card.dataset.labels) : [card.dataset.category];
     card.hidden = category !== "全部作品" && !labels.includes(category);
