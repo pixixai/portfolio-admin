@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Window} from 'happy-dom';
 import {initHeroVideo} from '../renderer/hero-video.js';
+import {shadeCSS} from '../renderer/display-settings.js';
 
 async function fixture(t, config, reduced = false) {
   const w = new Window({url:'http://127.0.0.1/site/'});
@@ -16,6 +17,7 @@ async function fixture(t, config, reduced = false) {
   const NativeImage=w.Image;w.Image=function(){const image=new NativeImage();loaded.push(image);return image;};
   w.fetch=async()=>({ok:true,json:async()=>config});
   const mediaQuery=new w.EventTarget();mediaQuery.matches=reduced;
+  w.shadeCSS=shadeCSS;
   const dispose=w.eval(`(${initHeroVideo.toString()})`)({reducedMotion:mediaQuery});t.after(dispose);
   await new Promise(setImmediate);
   const load=image=>{assert.ok(image);Object.defineProperties(image,{complete:{value:true,configurable:true},naturalWidth:{value:1920,configurable:true}});image.dispatchEvent(new w.Event('load'));};

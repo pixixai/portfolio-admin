@@ -77,6 +77,7 @@ function saveBrandEdit(){
 }
 function render() {
   if (!db) return;
+  if(maskAngleDrag)finishMaskAngleDrag(true);
   if (homeMediaDrag) clearHomeMediaDrag();
   const editorScroll = $('.editor-scroll')?.scrollTop || 0; closeBlockMenu();
   window.PortfolioRichText?.destroyAll();
@@ -135,7 +136,11 @@ function prepareSettings(value) {
   result.footer ||= {registrationText:'',registrationUrl:''};
   result.footer.registrationText ??= '';result.footer.registrationUrl ??= '';
   result.footer.text ??= `© ${result.year} ${result.owner} · 作品集`;
+  Object.entries(db.displayDefaults.footer).forEach(([key,value])=>{result.footer[key]??=key==='icpNumber'&&/ICP备/.test(result.footer.registrationText)?result.footer.registrationText:value;});
+  if(result.footer.icpNumber===result.footer.registrationText&&result.footer.registrationText){result.footer.registrationText='';result.footer.registrationUrl='';}
+  result.gallery={...copy(db.displayDefaults.gallery),...result.gallery,shadeGradient:{...db.displayDefaults.gallery.shadeGradient,...result.gallery?.shadeGradient}};
   result.homeBackground ||= {videos:[{assetId:null,playbackRate:1}],finalFrameAssetId:null};
+  result.homeBackground.shadeGradient={...db.displayDefaults.homeGradient,...result.homeBackground.shadeGradient};
   result.homeBackground.shadeOpacity ??= 80;result.homeBackground.shadeColor ??= '#000000';result.homeBackground.loop ??= true;return result;
 }
 function comparableSettings(value) {
@@ -145,16 +150,94 @@ function comparableSettings(value) {
 function refreshSettingsDirty() { window.PortfolioSitePreview?.changed();return settingsDirty=!!settingsLocal&&!equal(comparableSettings(settingsLocal),comparableSettings(settingsBaseline)); }
 function renderSettings() {
   if(!settingsLocal){settingsLocal=prepareSettings(db.settings);settingsBaseline=copy(settingsLocal);}
-  return `<div class="settings-page"><div class="settings-heading">${heading('展示设置', '保存为设置草稿，发布网站后生效。', `${btn('预览', 'preview-settings', '', 'eye', 'data-job-action')}${btn('保存设置', 'save-settings', 'primary', 'check')}`)}</div><div class="settings-sections"><section class="content-card settings-card" aria-labelledby="settings-background-title">${renderHomeBackgroundSettings()}</section><section class="content-card settings-card" aria-labelledby="settings-personal-title">${renderPersonalSettings()}</section><section class="content-card settings-card" aria-labelledby="settings-site-title">${renderSiteSettings()}</section></div></div>`;
+  return `<div class="settings-page"><div class="settings-heading">${heading('展示设置', '保存为设置草稿，发布网站后生效。', `${btn('预览', 'preview-settings', '', 'eye', 'data-job-action')}${btn('保存设置', 'save-settings', 'primary', 'check')}`)}</div><div class="settings-sections"><section class="content-card settings-card" aria-labelledby="settings-background-title">${renderHomeBackgroundSettings()}</section><section class="content-card settings-card" aria-labelledby="settings-gallery-title">${renderGallerySettings()}</section><section class="content-card settings-card" aria-labelledby="settings-personal-title">${renderPersonalSettings()}</section><section class="content-card settings-card" aria-labelledby="settings-site-title">${renderSiteSettings()}</section></div></div>`;
 }
 function settingField(label, key, value, options = {}) { return field(label, key, value, options).replaceAll('data-field=', 'data-setting='); }
+function settingSelect(label,key,value,options) { return `<label class="field"><span>${label}</span><select data-setting="${key}">${options.map(([id,title])=>`<option value="${id}" ${String(id)===String(value)?'selected':''}>${title}</option>`).join('')}</select></label>`; }
+function renderGallerySettings() {
+  const g=settingsLocal.gallery,num=(label,key,min,max,hint='')=>settingField(label,'gallery.'+key,g[key],{type:'number',attributes:`min="${min}" max="${max}" step="1"`,hint});
+  return `<div class="settings-section-heading"><h2 id="settings-gallery-title">作品瀑布流</h2>${btn('恢复默认','gallery-reset','small text')}</div><p>主站与分享空间共用。卡片宽度自动适配，封面比例由每个作品单独设置。</p>${num('区域最大宽度（px）','maxWidth',640,2560)}<div class="gallery-device-grid"><div><h3>电脑</h3>${num('两侧留白（px）','paddingDesktop',0,160)}${num('卡片间距（px）','gapDesktop',0,80)}${num('每行最多列数','columnsDesktop',1,8,'窄屏自动减少列数，保持封面可读。')}</div><div><h3>手机</h3>${num('两侧留白（px）','paddingMobile',0,80)}${num('卡片间距（px）','gapMobile',0,48)}${settingSelect('每行列数','gallery.columnsMobile',g.columnsMobile,[[1,'1列'],[2,'2列']])}</div></div><div class="field-grid">${num('封面圆角（px）','radius',0,80)}${settingSelect('标题与标签','gallery.infoMode',g.infoMode,[['hover','鼠标悬停时显示'],['always','始终显示']])}</div><p class="inline-note">手机与触屏设备始终显示标题和标签。</p><h3>悬停蒙板</h3>${renderMaskSettings('gallery',g)}`;
+}
+function maskBackground(value) {
+  const g=value.shadeGradient;if(!g.enabled)return value.shadeColor;
+  const rgba=(hex,opacity)=>`rgba(${[1,3,5].map(index=>parseInt(hex.slice(index,index+2),16)).join(',')},${opacity/100})`;
+  return `linear-gradient(${g.angle}deg,${rgba(g.startColor,g.startOpacity)},${rgba(g.endColor,g.endOpacity)})`;
+}
+function renderMaskSettings(scope,value) {
+  const home=scope==='homeBackground',g=value.shadeGradient,colors=[['黑色','#000000'],['白色','#ffffff'],['灰色','#64748b'],['蓝色','#173d7a'],['紫色','#4c1d5b'],['绿色','#214d3d'],['棕色','#5a3526']];
+  const input=(key,type,val,min,max,label)=>`<input type="${type}" data-mask-scope="${scope}" data-mask-field="${key}" value="${val}" aria-label="${label}" ${min!=null?`min="${min}" max="${max}" step="1"`:''}>`;
+  const opacity=(key,title,position)=>`<label class="mask-stop mask-stop-opacity ${position}" title="${title}"><span>${position==='mask-stop-start'?'起点':'终点'}</span>${input(key,'number',g[key.split('.').at(-1)],0,100,title)}<span>%</span></label>`;
+  const color=(key,title,position)=>`<label class="mask-stop mask-stop-color ${position}" title="${title}">${input(key,'color',g[key.split('.').at(-1)],null,null,title)}<span>${title}</span></label>`;
+  return `<div class="home-shade-control mask-editor" data-mask-editor="${scope}">
+    <div class="mask-heading"><span class="home-shade-label">蒙板颜色</span><div class="segmented"><button type="button" data-action="mask-mode" data-scope="${scope}" data-mode="solid" class="${!g.enabled?'active':''}" aria-pressed="${!g.enabled}">纯色</button><button type="button" data-action="mask-mode" data-scope="${scope}" data-mode="gradient" class="${g.enabled?'active':''}" aria-pressed="${g.enabled}">渐变</button></div></div>
+    <div class="mask-gradient" ${g.enabled?'':'hidden'}>
+      <div class="gradient-presets" role="group" aria-label="预设渐变">${db.displayDefaults.gradientPresets.map((preset,index)=>`<button type="button" data-action="mask-preset" data-scope="${scope}" data-preset="${index}" title="${preset.name}" aria-label="${preset.name}" aria-pressed="${Object.entries(preset).every(([key,item])=>key==='name'||g[key]===item)}"><span style="background:${maskBackground({shadeGradient:{...preset,enabled:true,angle:90}})}"></span></button>`).join('')}</div>
+      <div class="mask-angle"><span>角度：</span><button type="button" class="mask-angle-dial" data-mask-dial="${scope}" role="slider" aria-label="渐变角度圆盘" aria-valuemin="0" aria-valuemax="360" aria-valuenow="${g.angle}" aria-valuetext="${g.angle}度" style="--mask-angle:${g.angle}deg" title="拖动选择角度；0°向上，90°向右。方向键微调，Shift加速。"><span class="mask-angle-hand" aria-hidden="true"></span></button><label class="mask-angle-value">${input('shadeGradient.angle','number',g.angle,0,360,'渐变角度')}<span>度</span></label></div>
+    </div>
+    <div class="home-shade-colors" role="group" aria-label="蒙板颜色" ${g.enabled?'hidden':''}>${colors.map(([label,color])=>`<button type="button" class="home-shade-swatch" data-action="${home?'home-bg-shade-color':'mask-color'}" data-scope="${scope}" data-color="${color}" style="--swatch:${color}" title="${label}" aria-label="${label}蒙板" aria-pressed="${value.shadeColor===color}"><span aria-hidden="true"></span></button>`).join('')}<label class="home-shade-custom">自定义<input type="color" ${home?'data-home-shade-color':`data-mask-scope="${scope}" data-mask-field="shadeColor"`} value="${esc(value.shadeColor)}" aria-label="自定义蒙板颜色"></label><output ${home?'data-home-color-value':'data-mask-color-value'}>${esc(value.shadeColor.toUpperCase())}</output></div>
+    <div class="mask-stop-editor ${g.enabled?'has-gradient':''}">
+      ${g.enabled?opacity('shadeGradient.startOpacity','起点不透明度','mask-stop-start')+opacity('shadeGradient.endOpacity','终点不透明度','mask-stop-end'):''}
+      <div class="mask-preview"><div data-mask-preview style="background:${maskBackground(value)};opacity:${value.shadeOpacity/100}"></div><span>蒙板预览</span></div>
+      ${g.enabled?color('shadeGradient.startColor','起始颜色','mask-stop-start')+color('shadeGradient.endColor','结束颜色','mask-stop-end'):''}
+    </div>
+    <label>蒙板不透明度</label><div class="home-shade-inputs"><input type="range" min="0" max="100" step="1" ${home?'data-home-shade':`data-mask-scope="${scope}" data-mask-field="shadeOpacity"`} value="${value.shadeOpacity}" aria-label="蒙板不透明度滑块" aria-valuetext="${value.shadeOpacity}% 不透明"><label><input type="number" min="0" max="100" step="1" ${home?'data-home-shade':`data-mask-scope="${scope}" data-mask-field="shadeOpacity"`} value="${value.shadeOpacity}" aria-label="蒙板不透明度数值"><span>%</span></label></div><p>整体不透明度0～100%；渐变的起点和终点可以分别设置透明程度。</p>
+  </div>`;
+}
+
+function refreshMaskEditor(scope) { const node=document.querySelector(`[data-mask-editor="${scope}"]`);if(node)node.outerHTML=renderMaskSettings(scope,settingsLocal[scope]); }
+function updateMaskPreview(scope) {
+  const value=settingsLocal[scope],editor=document.querySelector('[data-mask-editor="'+scope+'"]'),node=editor?.querySelector('[data-mask-preview]');
+  if(node){node.style.background=maskBackground(value);node.style.opacity=value.shadeOpacity/100;}
+  editor?.querySelectorAll('[data-color]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.color===value.shadeColor)));
+  editor?.querySelectorAll('[data-preset]').forEach(button=>{const preset=db.displayDefaults.gradientPresets[Number(button.dataset.preset)];button.setAttribute('aria-pressed',String(Object.entries(preset).every(([key,item])=>key==='name'||value.shadeGradient[key]===item)));});
+}
+function setMaskValue(scope,key,value) {
+  const keys=key.split('.');let target=settingsLocal[scope];keys.slice(0,-1).forEach(part=>target=target[part]);target[keys.at(-1)]=value;
+  document.querySelectorAll(`[data-mask-scope="${scope}"][data-mask-field="${key}"]`).forEach(input=>{if(input.value!==String(value))input.value=value;});
+  const editor=document.querySelector(`[data-mask-editor="${scope}"]`);
+  if(key==='shadeColor'){const label=editor?.querySelector('[data-mask-color-value]');if(label)label.textContent=value.toUpperCase();}
+  if(key==='shadeGradient.angle'){
+    const dial=editor?.querySelector('[data-mask-dial]');if(dial){dial.style.setProperty('--mask-angle',`${value}deg`);dial.setAttribute('aria-valuenow',String(value));dial.setAttribute('aria-valuetext',`${value}度`);}
+  }
+  refreshSettingsDirty();updateMaskPreview(scope);
+}
+let maskAngleDrag=null;
+function moveMaskAngle(event) {
+  const drag=maskAngleDrag;if(!drag||event.pointerId!==drag.pointerId)return;
+  const x=event.clientX-drag.x,y=event.clientY-drag.y;if(Math.hypot(x,y)<2)return;
+  const angle=Math.round((Math.atan2(x,-y)*180/Math.PI+360)%360)%360;
+  setMaskValue(drag.scope,'shadeGradient.angle',angle);
+}
+function finishMaskAngleDrag(cancel=false) {
+  const drag=maskAngleDrag;if(!drag)return;maskAngleDrag=null;
+  if(cancel&&settingsLocal?.[drag.scope])setMaskValue(drag.scope,'shadeGradient.angle',drag.initialAngle);
+  drag.element.classList.remove('is-turning');try{drag.element.releasePointerCapture?.(drag.pointerId);}catch{}
+}
+document.addEventListener('pointerdown',event=>{
+  const dial=event.target.closest?.('[data-mask-dial]');if(!dial||event.button!==0||event.isPrimary===false||!settingsLocal)return;
+  event.preventDefault();event.stopPropagation();finishMaskAngleDrag(true);dial.focus({preventScroll:true});
+  const scope=dial.dataset.maskDial,rect=dial.getBoundingClientRect();
+  maskAngleDrag={element:dial,scope,pointerId:event.pointerId,x:rect.left+rect.width/2,y:rect.top+rect.height/2,initialAngle:settingsLocal[scope].shadeGradient.angle};
+  dial.classList.add('is-turning');try{dial.setPointerCapture?.(event.pointerId);}catch{}moveMaskAngle(event);
+});
+document.addEventListener('pointermove',event=>{if(maskAngleDrag&&event.pointerId===maskAngleDrag.pointerId){event.preventDefault();moveMaskAngle(event);}},{passive:false});
+document.addEventListener('pointerup',event=>{if(maskAngleDrag&&event.pointerId===maskAngleDrag.pointerId){moveMaskAngle(event);finishMaskAngleDrag();}});
+document.addEventListener('pointercancel',event=>{if(maskAngleDrag&&event.pointerId===maskAngleDrag.pointerId)finishMaskAngleDrag(true);});
+window.addEventListener('blur',()=>finishMaskAngleDrag(true));
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&maskAngleDrag){event.preventDefault();event.stopImmediatePropagation();finishMaskAngleDrag(true);return;}
+  const dial=event.target.closest?.('[data-mask-dial]');if(!dial||!settingsLocal)return;
+  const scope=dial.dataset.maskDial,angle=settingsLocal[scope].shadeGradient.angle,step=event.shiftKey?10:1;
+  const next=event.key==='Home'?0:event.key==='End'?360:['ArrowRight','ArrowUp'].includes(event.key)?(angle+step)%360:['ArrowLeft','ArrowDown'].includes(event.key)?(angle-step+360)%360:null;
+  if(next!==null){event.preventDefault();event.stopImmediatePropagation();setMaskValue(scope,'shadeGradient.angle',next);}
+},true);
 function renderPersonalSettings() {
   const s = settingsLocal;
   return `<h2 id="settings-personal-title">个人信息</h2><p>首页介绍、姓名、职业身份和联系方式在这里一起维护。</p>${settingField('首页介绍', 'tagline', s.tagline, { hint: '介绍、姓名与职业身份显示在首页按钮栏下方。' })}<div class="field-grid">${settingField('姓名', 'owner', s.owner)}${settingField('职业身份', 'role', s.role)}</div><hr class="settings-divider"><h3>联系方式</h3><p>微信、邮箱和 Bilibili 显示在首页按钮栏及页脚。</p><div class="field-grid">${settingField('微信', 'contact.wechat', s.contact.wechat)}${settingField('Bilibili 昵称', 'contact.bilibiliName', s.contact.bilibiliName)}</div>${settingField('首页及页脚邮箱', 'contact.emails.0', s.contact.emails[0], { type: 'email' })}${settingField('备用邮箱（不在首页显示）', 'contact.emails.1', s.contact.emails[1], { type: 'email' })}`;
 }
 function renderSiteSettings() {
   const s = settingsLocal;
-  return `<h2 id="settings-site-title">网站信息与页脚</h2><p>设置浏览器标签文字、网站摘要及页脚信息。</p>${settingField('浏览器页面标题', 'title', s.title, { hint: '显示在浏览器顶部标签上，不是首页中的可见标题。' })}${settingField('网站描述', 'description', s.description, { textarea: true, hint: '写入网页描述信息，供搜索引擎读取；正文中不显示，搜索摘要由搜索引擎决定。' })}<hr class="settings-divider"><h3>页脚信息</h3>${settingField('页脚信息', 'footer.text', s.footer.text, { textarea: true, hint: '直接编辑网站底部的文字，支持换行；留空时隐藏这段文字。', attributes: 'maxlength="1000"' })}${settingField('备案或注册信息（可选）','footer.registrationText',s.footer.registrationText)}${settingField('对应链接（可选，HTTPS）','footer.registrationUrl',s.footer.registrationUrl,{type:'url'})}`;
+  return `<h2 id="settings-site-title">网站信息与页脚</h2><p>设置浏览器标签文字、网站摘要及页脚信息。</p>${settingField('浏览器页面标题', 'title', s.title, { hint: '显示在浏览器顶部标签上，不是首页中的可见标题。' })}${settingField('网站描述', 'description', s.description, { textarea: true, hint: '写入网页描述信息，供搜索引擎读取；正文中不显示，搜索摘要由搜索引擎决定。' })}<hr class="settings-divider"><h3>页脚信息</h3>${settingField('底部文案','footer.endnote',s.footer.endnote,{textarea:true,hint:'显示在瀑布流下方；留空时隐藏。',attributes:'maxlength="300"'})}${settingField('页脚信息', 'footer.text', s.footer.text, { textarea: true, hint: '直接编辑网站底部的文字，支持换行；留空时隐藏这段文字。', attributes: 'maxlength="1000"' })}<div class="field-grid">${settingField('ICP备案号','footer.icpNumber',s.footer.icpNumber,{hint:'自动链接到工信部备案系统，留空不显示。',attributes:'maxlength="120"'})}${settingField('公安备案号','footer.policeNumber',s.footer.policeNumber,{hint:'自动附带公安备案图标与查询链接，留空不显示。',attributes:'maxlength="120"'})}</div><p class="inline-note">带“示例”的号码仅用于查看排版，上线前请替换为审核通过的真实号码。</p><details class="legacy-filing"><summary>其他注册信息</summary>${settingField('其他备案或注册信息','footer.registrationText',s.footer.registrationText)}${settingField('对应链接（HTTPS）','footer.registrationUrl',s.footer.registrationUrl,{type:'url'})}</details>`;
 }
 function renderHomeVideoPreview(asset) {
   const src=asset?.url||'/site/assets/home/home-background.mp4',poster=homeVideoPosters.get(src),label=esc((asset?.name||'默认首页视频')+'首帧');
@@ -177,10 +260,7 @@ function prepareHomeVideoPreviews() {
     video.addEventListener('loadeddata',capture,{once:true});video.addEventListener('error',failed,{once:true});if(video.readyState>=2)capture();
   });
 }
-function renderHomeShadeSettings(background) {
-  const colors=[['黑色','#000000'],['白色','#ffffff'],['灰色','#64748b'],['蓝色','#173d7a'],['紫色','#4c1d5b'],['绿色','#214d3d'],['棕色','#5a3526']];
-  return `<div class="home-shade-control"><span class="home-shade-label">蒙板颜色</span><div class="home-shade-colors" role="group" aria-label="蒙板颜色">${colors.map(([label,color])=>`<button type="button" class="home-shade-swatch" data-action="home-bg-shade-color" data-color="${color}" style="--swatch:${color}" title="${label}" aria-label="${label}蒙板" aria-pressed="${background.shadeColor===color}"><span aria-hidden="true"></span></button>`).join('')}<label class="home-shade-custom">自定义<input type="color" data-home-shade-color value="${esc(background.shadeColor)}" aria-label="自定义蒙板颜色"></label><output data-home-color-value>${esc(background.shadeColor.toUpperCase())}</output></div><label for="home-shade-range">蒙板不透明度</label><div class="home-shade-inputs"><input id="home-shade-range" type="range" min="0" max="100" step="1" data-home-shade value="${background.shadeOpacity}" aria-label="蒙板不透明度滑块" aria-valuetext="${background.shadeOpacity}% 不透明"><label><input type="number" min="0" max="100" step="1" data-home-shade value="${background.shadeOpacity}" aria-label="蒙板不透明度数值"><span>%</span></label></div><p>0% 无蒙板，100% 完全覆盖背景。默认黑色、80%，不影响文字和按钮。</p></div>`;
-}
+function renderHomeShadeSettings(background) { return renderMaskSettings('homeBackground',background); }
 function renderHomeBackgroundSettings() {
   const background=settingsLocal.homeBackground, frame=assetById(background.finalFrameAssetId);
   const rows=background.videos.map((item,index)=>{
@@ -194,7 +274,7 @@ async function homeBackgroundAction(name,element) {
   const background=settingsLocal.homeBackground;
   const update=()=>{refreshSettingsDirty();render();};
   const add=assets=>{if(background.videos.length+assets.length>30)throw new Error('首页背景最多支持30项媒体。');background.videos.push(...assets.map(asset=>asset.mime.startsWith('image/')?{assetId:asset.id,type:'image',duration:5}:{assetId:asset.id,playbackRate:1}));update();};
-  if(name==='home-bg-shade-color'){background.shadeColor=element.dataset.color;return update();}
+  if(name==='home-bg-shade-color'){background.shadeColor=element.dataset.color;refreshSettingsDirty();return refreshMaskEditor('homeBackground');}
   if(name==='home-bg-loop'){background.loop=!background.loop;return update();}
   if(name==='home-bg-upload')return chooseFiles(async files=>add(await uploadFiles(files,{kind:'background'})),'background');
   if(name==='home-bg-select')return openMediaPicker(true,add,'background');
@@ -501,6 +581,14 @@ async function action(name, element) {
   if (name.startsWith('space-')) return spaceAction(name,element);
   if(['publish-dialog','publish-selected','publish-editor','backup-data','restore-data','edit','new'].includes(name)&&typeof spaceHasPending==='function'&&spaceHasPending())await flushSpaceChanges();
   if (name.startsWith('home-bg-')) return homeBackgroundAction(name,element);
+  if(name==='gallery-reset'){settingsLocal.gallery=copy(db.displayDefaults.gallery);refreshSettingsDirty();const section=document.querySelector('[aria-labelledby="settings-gallery-title"]');if(section)section.innerHTML=renderGallerySettings();return;}
+  if(name.startsWith('mask-')){
+    const scope=element.dataset.scope;if(!['homeBackground','gallery'].includes(scope))return;const value=settingsLocal[scope];
+    if(name==='mask-mode')value.shadeGradient.enabled=element.dataset.mode==='gradient';
+    if(name==='mask-preset'){const {name:_,...preset}=db.displayDefaults.gradientPresets[Number(element.dataset.preset)];value.shadeGradient={...preset,enabled:true};}
+    if(name==='mask-color')value.shadeColor=element.dataset.color;
+    refreshSettingsDirty();return refreshMaskEditor(scope);
+  }
   if (documentActions.has(name)) return documentAction(name, element);
   if (name === 'toggle-site-preview') return window.PortfolioSitePreview?.toggle();
   if (name === 'reload') return location.reload();
@@ -584,11 +672,19 @@ document.addEventListener('click', event => {
 document.addEventListener('keydown', event => { if (event.target.matches?.('[data-pick]') && ['Enter', ' '].includes(event.key)) { event.preventDefault(); event.target.click(); } });
 document.addEventListener('input', event => {
   const element = event.target;
+  if(element.dataset.maskField&&settingsLocal){
+    const scope=element.dataset.maskScope;if(!['homeBackground','gallery'].includes(scope))return;
+    if(element.value.trim()==='')return;
+    const number=['number','range'].includes(element.type),value=number?Math.max(Number(element.min),Math.min(Number(element.max),Math.round(Number(element.value)))):element.value.toLowerCase();
+    if(number&&!Number.isFinite(value)||!number&&!/^#[\da-f]{6}$/.test(value))return;
+    setMaskValue(scope,element.dataset.maskField,value);return;
+  }
   if (element.matches?.('[data-home-shade-color]') && settingsLocal) {
     const value=element.value.toLowerCase();if(!/^#[\da-f]{6}$/.test(value))return;
     settingsLocal.homeBackground.shadeColor=value;refreshSettingsDirty();
     document.querySelectorAll('[data-action="home-bg-shade-color"]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.color===value)));
     const label=document.querySelector('[data-home-color-value]');if(label)label.textContent=value.toUpperCase();
+    updateMaskPreview('homeBackground');
     return;
   }
   if (element.matches?.('[data-home-shade]') && settingsLocal) {
@@ -596,6 +692,7 @@ document.addEventListener('input', event => {
     const value=Math.max(0,Math.min(100,Math.round(Number(element.value))));
     settingsLocal.homeBackground.shadeOpacity=value;refreshSettingsDirty();
     document.querySelectorAll('[data-home-shade]').forEach(input=>{if(input.value!==String(value))input.value=value;if(input.type==='range')input.setAttribute('aria-valuetext',`${value}% 不透明`);});
+    updateMaskPreview('homeBackground');
     return;
   }
   if (element.id === 'works-search') { query = element.value; $('#works-results').innerHTML = renderWorksResults(); return; }
@@ -603,7 +700,7 @@ document.addEventListener('input', event => {
   if (element.id === 'picker-search') { picker.query = element.value; const pos = element.selectionStart; renderPicker(); const input = $('#picker-search'); input.focus(); input.setSelectionRange(pos, pos); return; }
   if (element.dataset.field && editor) { const key = element.dataset.field; editor[key] = key === 'title' ? element.value.replace(/\r?\n/g, ' ') || '未命名作品' : key === 'tags' ? element.value.split(/[,，]/).map(tag => tag.trim()).filter(Boolean) : key === 'order' ? Number(element.value) : element.value; changed(); if (key === 'coverRatio') render(); }
   if (element.dataset.blockField && editor) { editor.blocks.find(block => block.id === element.dataset.blockId)[element.dataset.blockField] = element.value; changed(); }
-  if (element.dataset.setting && settingsLocal) { const keys = element.dataset.setting.split('.'); let target = settingsLocal; keys.slice(0, -1).forEach(key => { target = target[key]; }); const key = keys.at(-1); target[key] = keys[0] === 'categories' ? element.value.split('\n').map(value => value.trim()).filter(Boolean) : element.type === 'number' ? Number(element.value) : element.value; refreshSettingsDirty(); if (element.type === 'color') $('#color-value').textContent = element.value; }
+  if (element.dataset.setting && settingsLocal) { const keys = element.dataset.setting.split('.'); let target = settingsLocal; keys.slice(0, -1).forEach(key => { target = target[key]; }); const key = keys.at(-1); target[key] = keys[0] === 'categories' ? element.value.split('\n').map(value => value.trim()).filter(Boolean) : element.type === 'number'||typeof target[key]==='number' ? Number(element.value) : element.value; refreshSettingsDirty(); if (element.type === 'color'&&$('#color-value')) $('#color-value').textContent = element.value; }
 });
 document.addEventListener('change', event => {
   const element = event.target;

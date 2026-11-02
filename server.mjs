@@ -9,6 +9,7 @@ import { resolveRuntimeData } from './lib/runtime-data.mjs';
 import { openDefaultBrowser } from './lib/launch.mjs';
 import { Publisher } from './lib/publisher.mjs';
 import { validateProject, validateSettings, fail } from './lib/validation.mjs';
+import {defaultGallery,defaultGradient,defaultFooter,gradientPresets} from './renderer/display-settings.js';
 import { zipDirectory,packageLimit } from './lib/zip.mjs';
 import {ProjectImporter} from './lib/project-package.mjs';
 import { inspectMedia } from './lib/media.mjs';
@@ -87,6 +88,7 @@ export async function createApplication({ dataDir, rendererDir = path.join(root,
       runtime:{mode:runtime.mode,...(cloud?{siteUrl:runtime.siteOrigin+'/',adminUser:runtime.username}:{})},
       projects: store.projects(), folders: folders(store), media: store.media().map(asset => ({ ...asset, url: `/api/media/${asset.id}/file`, references: store.references(asset.id) })),
       settings: store.get('settingsDraft'), settingsLive: store.get('settingsLive'), settingsRevision: store.get('settingsRevision'),labelOrder:globalLabelOrder(store),
+      displayDefaults:{gallery:defaultGallery(),homeGradient:defaultGradient(),footer:defaultFooter(),gradientPresets},
       currentRelease: store.get('currentRelease'), releases: store.releases().map(({ snapshot, ...release }) => ({ ...release, count: snapshot.projects.length,deployment:snapshot.deployment||{platform:'generic',projectName:'portfolio-site'} })),
       releaseRetention: releaseRetention(store),
       capabilities:{backgroundLoop:true,sidebarPreview:true,platformExport:true,remoteSync:!cloud,userBackup:true,privateSpaces:true,spaceGroups:true,unifiedPreview:true,spaceCodes:true,spaceFormOrigin:true,spacePin:true,spaceAutoPublic:false,displaySpaces:true,shareSpaces:true},

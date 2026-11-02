@@ -1,4 +1,5 @@
 import { masonryLayout } from "./gallery.js";
+import {galleryLayout} from './display-settings.js';
 import { initHeroVideo } from "./hero-video.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -7,6 +8,7 @@ const siteRoot = new URL(script.dataset.siteRoot, location.href);
 const baseTitle = document.title;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const grid = $("#grid");
+const gallerySettings=JSON.parse(grid.dataset.gallery||'{}');
 const cards = [...grid.querySelectorAll(".project-card")];
 const originalCardOrder=new Map(cards.map((card,i)=>[card,i]));
 const cardLabelOrders=new Map(cards.map(card=>[card,JSON.parse(card.dataset.labelOrders||'{}')]));
@@ -48,6 +50,7 @@ document.querySelectorAll("img[src], a[href]").forEach((element) => {
 
 let layoutFrame = 0,
   lastWidth = -1,
+  lastMobile = null,
   pendingAnimate = false,
   pendingFilterAnchor = null;
 function queueLayout(animate = false) {
@@ -56,11 +59,12 @@ function queueLayout(animate = false) {
   layoutFrame = requestAnimationFrame(() => {
     const width = grid.clientWidth;
     if (!width) return;
-    if (width === lastWidth && !pendingAnimate) return;
+    const mobile=window.innerWidth<=760;
+    if (width === lastWidth && mobile===lastMobile && !pendingAnimate) return;
     lastWidth = width;
+    lastMobile=mobile;
     const visible = cards.filter((card) => !card.hidden);
-    const columns = width >= 1200 ? 4 : width >= 820 ? 3 : width >= 300 ? 2 : 1;
-    const gap = width >= 820 ? 20 : 12;
+    const {columns,gap}=galleryLayout(gallerySettings,width,window.innerWidth);
     const layout = masonryLayout(
       visible.map((card) => card.dataset.ratio),
       width,
@@ -93,6 +97,7 @@ function queueLayout(animate = false) {
   });
 }
 new ResizeObserver(() => queueLayout()).observe(grid);
+window.addEventListener('resize',()=>queueLayout());
 function filterProjects(category, preserveToolbar = false) {
   const buttons = [...filters.querySelectorAll("button")];
   if (!buttons.some((button) => button.dataset.category === category))

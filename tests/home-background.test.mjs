@@ -21,7 +21,7 @@ test('首页背景上传、排序倍速、定格帧校验、设置草稿发布�
   const one=await upload(video,'一.mp4','video/mp4'),two=await upload(video2,'二.mp4','video/mp4');
   // Reuse a real image from the imported collection for a valid final still.
   const before=await api('/api/state'),frame=before.media.find(asset=>asset.mime.startsWith('image/'));
-  const background={videos:[{assetId:one.id,playbackRate:.5},{assetId:two.id,playbackRate:1.5}],finalFrameAssetId:frame.id,shadeOpacity:80,shadeColor:'#000000',loop:false};
+  const background={videos:[{assetId:one.id,playbackRate:.5},{assetId:two.id,playbackRate:1.5}],finalFrameAssetId:frame.id,shadeOpacity:80,shadeColor:'#000000',shadeGradient:{enabled:false,angle:180,startColor:'#000000',endColor:'#173d7a',startOpacity:100,endOpacity:100},loop:false};
   for(const value of [0,5,null])await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,homeBackground:{...background,videos:[{assetId:one.id,playbackRate:value}]}},400);
   await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,homeBackground:{...background,videos:[{assetId:frame.id,type:'video',playbackRate:1}]}},400);
   for(const duration of [0,121,'5'])await api('/api/settings','PUT',{...before.settings,revision:before.settingsRevision,homeBackground:{...background,videos:[{assetId:frame.id,type:'image',duration}]}},400);
@@ -45,7 +45,7 @@ test('首页背景上传、排序倍速、定格帧校验、设置草稿发布�
   const $=s=>w.document.querySelector(s),$$=s=>[...w.document.querySelectorAll(s)];
   await until(()=>$('.works-table'),'后台加载');$('[data-nav=settings]').click();await until(()=>$('.settings-sections'),'展示设置');assert.equal($$('[data-home-video]').length,2);assert.ok($('.home-final-preview'));
   assert.equal($('.settings-nav'),null);assert.equal($('[data-settings-tab]'),null);
-  assert.deepEqual($$('.settings-sections>section').map(section=>w.document.getElementById(section.getAttribute('aria-labelledby')).textContent),['首页背景','个人信息','网站信息与页脚']);
+  assert.deepEqual($$('.settings-sections>section').map(section=>w.document.getElementById(section.getAttribute('aria-labelledby')).textContent),['首页背景','作品瀑布流','个人信息','网站信息与页脚']);
   for(const key of ['owner','role','tagline','contact.wechat','contact.bilibiliName','contact.emails.0'])assert.ok($(`[data-setting="${key}"]`).closest('[aria-labelledby="settings-personal-title"]'),'身份与联系方式放在同一区域');
   for(const key of ['title','description','footer.text'])assert.ok($(`[data-setting="${key}"]`).closest('label').querySelector('small'),'网站信息解释显示位置');
   assert.equal($('[data-setting="year"]'),null,'移除作品集年份控件');
@@ -61,7 +61,7 @@ test('首页背景上传、排序倍速、定格帧校验、设置草稿发布�
   w.HTMLCanvasElement.prototype.getContext=nativeContext;w.HTMLCanvasElement.prototype.toDataURL=nativeDataURL;
   assert.equal(w.getComputedStyle($('.settings-heading')).position,'sticky');assert.equal(w.getComputedStyle($('.settings-heading')).top,'0px');
   for(const action of ['save-settings','preview-settings']){assert.equal($$(`[data-action="${action}"]`).length,1);assert.ok($(`.settings-heading [data-action="${action}"]`));}
-  const textChanges={owner:'设置页作者',role:'品牌设计师',tagline:'同页编辑网站介绍',title:'设置页测试作品集',description:'同页编辑的网站描述','contact.wechat':'unified-wechat','contact.bilibiliName':'设置页昵称','contact.emails.0':'unified@example.com','footer.text':'© 2026 噼哩画啦 · 作品集\n设计 <实验> & {{owner}}','footer.registrationText':'同页登记','footer.registrationUrl':'https://example.com/unified'};
+  const textChanges={owner:'设置页作者',role:'品牌设计师',tagline:'同页编辑网站介绍',title:'设置页测试作品集',description:'同页编辑的网站描述','contact.wechat':'unified-wechat','contact.bilibiliName':'设置页昵称','contact.emails.0':'long.portfolio.contact.name@example.com','footer.text':'© 2026 噼哩画啦 · 作品集\n设计 <实验> & {{owner}}','footer.registrationText':'同页登记','footer.registrationUrl':'https://example.com/unified'};
   for(const [key,value] of Object.entries(textChanges)){const input=$(`[data-setting="${key}"]`);assert.ok(input,`${key}与背景控件同时显示`);input.value=value;input.dispatchEvent(new w.Event('input',{bubbles:true}));}
   $('[data-action=home-bg-shade-color][data-color="#173d7a"]').click();assert.equal($('[data-home-shade-color]').value,'#173d7a');assert.equal($('[data-action=home-bg-shade-color][data-color="#173d7a"]').getAttribute('aria-pressed'),'true');
   const color=$('[data-home-shade-color]');color.value='#abcdef';color.dispatchEvent(new w.Event('input',{bubbles:true}));assert.equal($('[data-home-shade-color]'),color,'自定义颜色不重建控件');assert.equal($('[data-home-color-value]').textContent,'#ABCDEF');
@@ -95,6 +95,11 @@ test('首页背景上传、排序倍速、定格帧校验、设置草稿发布�
   const previewDocument=new Window();t.after(()=>previewDocument.happyDOM.abort());previewDocument.document.write(previewHTML);assert.equal(previewDocument.document.title,textChanges.title);assert.equal(previewDocument.document.querySelector('meta[name="description"]').content,textChanges.description);assert.equal(previewDocument.document.querySelector('.footer-copyright').textContent,textChanges['footer.text']);assert.equal(previewDocument.document.querySelector('.footer-copyright').children.length,0,'页脚纯文字不作为HTML或模板解析');
   $('[data-action=close-dialog]').click();
   // The exported source and deployment use public asset URLs, never private API URLs.
+  const emailButton=previewDocument.document.querySelector('.home-email'),fullEmail=textChanges['contact.emails.0'];
+  assert.equal(emailButton.dataset.copyValue,fullEmail);assert.equal(emailButton.querySelector('.contact-label').textContent,fullEmail);assert.ok(emailButton.title.includes(fullEmail));assert.ok(emailButton.getAttribute('aria-label').includes(fullEmail));
+  let copiedEmail='';Object.defineProperty(previewDocument.navigator,'clipboard',{configurable:true,value:{writeText:async value=>{copiedEmail=value;}}});
+  const clientSource=(await readFile(path.join(root,'renderer/app.js'),'utf8')).replace(/\r\n/g,'\n'),copyStart=clientSource.indexOf('document.querySelectorAll("[data-copy-value]")'),copyEnd=clientSource.indexOf('\ndocument.addEventListener(\n  "error"',copyStart);assert.ok(copyStart>=0&&copyEnd>copyStart);
+  previewDocument.eval('const $=selector=>document.querySelector(selector);\n'+clientSource.slice(copyStart,copyEnd));emailButton.click();await until(()=>copiedEmail===fullEmail&&emailButton.querySelector('.contact-label').textContent==='已复制','邮箱显示省略时仍复制完整地址并显示反馈');
   await api('/api/settings','PUT',{...data.settings,revision:data.settingsRevision,homeBackground:{...data.settings.homeBackground,finalFrameAssetId:frame.id},footer:{...data.settings.footer,registrationText:'测试登记 <示例>',registrationUrl:'https://example.com/registry'}});
   const publishing=await api('/api/publish','POST',{projectIds:[],includeSettings:true},202);await until(()=>app.publisher.jobs.get(publishing.id).status!=='running','背景发布');assert.equal(app.publisher.jobs.get(publishing.id).status,'done',app.publisher.jobs.get(publishing.id).message);
   const config=await api('/site/data/home-background.json');assert.deepEqual(config.videos.slice(0,2).map(item=>item.playbackRate),[2,.5]);assert.equal(config.videos[2].type,'image');assert.equal(config.videos[2].duration,7);assert.ok(config.videos[2].src.startsWith('assets/home/uploads/'));assert.ok(config.finalFrame.startsWith('assets/home/uploads/'));assert.equal(config.shadeOpacity,0);assert.equal(config.shadeColor,'#abcdef');

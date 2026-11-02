@@ -8,12 +8,14 @@ import {createApplication,root} from '../server.mjs';
 import {digest,openStore} from '../lib/store.mjs';
 import {readZip} from '../lib/zip.mjs';
 import {restorePath} from '../lib/project-package.mjs';
+import {defaultGallery} from '../renderer/display-settings.js';
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(check,label){for(let end=Date.now()+15000;Date.now()<end;){if(check())return;await pause(15);}throw new Error('等待超时：'+label);}
 
 test('新安装仅包含两个示例、四张图片和六个标签，使用默认视频与公开署名',async t=>{
   const app=await createApplication({dataDir:await mkdtemp(path.join(os.tmpdir(),'pixix-default-version-'))});await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));t.after(()=>app.close());const base=`http://127.0.0.1:${app.server.address().port}`;
   const state=await(await fetch(base+'/api/state')).json();assert.equal(state.projects.length,2);assert.equal(state.media.length,4);assert.equal(state.releases.length,1);
+  assert.deepEqual(state.settings.gallery,defaultGallery());assert.equal(state.settings.gallery.gapDesktop,5);assert.equal(state.settings.gallery.gapMobile,3);
   assert.deepEqual(state.settings.categories,['品牌 / IP','包装设计','UI / UX','平面视觉','空间设计','电商视觉']);assert.equal(state.settings.owner,'噼哩画啦');assert.equal(state.settings.brand,'噼哩画啦');assert.equal(state.settings.footer.text,'© 2026 噼哩画啦 · 作品集');assert.equal(state.settings.appearance.coverRadius,0);assert.equal(state.settings.homeBackground.loop,true);
   const docs=state.projects.map(row=>row.draft);assert.deepEqual(docs.map(row=>row.id),['sample-palette','sample-prism']);
   for(const document of docs){assert.equal(document.blocks.length,1);assert.equal(document.blocks[0].type,'image');assert.notEqual(document.coverAssetId,document.blocks[0].assetId);assert.equal(document.coverRatio,'16:9');const cover=state.media.find(asset=>asset.id===document.coverAssetId),content=state.media.find(asset=>asset.id===document.blocks[0].assetId),folder=path.join(root,'renderer/Portfolio',document.folder);assert.equal(cover.hash,digest(await readFile(path.join(folder,'cover.png'))));assert.equal(content.hash,digest(await readFile(path.join(folder,'content.png'))));}

@@ -12,6 +12,7 @@ import {
 import path from "node:path";
 import {createRequire} from 'node:module';
 import { adjacentProjects } from "../gallery.js";
+import {normalizeGallery,galleryCSS,defaultFooter} from '../display-settings.js';
 import {
   root,
   escapeHtml as e,
@@ -23,6 +24,7 @@ import {
 
 // Validate all content before replacing the previous successful deployment output.
 const { site, projects } = await loadContent();
+const gallery=normalizeGallery(site.gallery);
 const [layout, home, detail] = await Promise.all([
   readFile(path.join(root, "templates/layout.html"), "utf8"),
   readFile(path.join(root, "index.html"), "utf8"),
@@ -55,6 +57,7 @@ function page(content, prefix, title, description, initialProject = "") {
     title: e(title),
     description: e(description),
     initialProject,
+    cardInfo:gallery.infoMode,
     content,
   });
 }
@@ -83,6 +86,12 @@ try {
   const registrationUrl = site.footer?.registrationUrl || "";
   if (registrationUrl && new URL(registrationUrl).protocol !== "https:") throw new Error("Registration link must use HTTPS.");
   const footerRegistration = registrationText ? `<p class="footer-registration">${registrationUrl ? `<a href="${e(registrationUrl)}" target="_blank" rel="noopener">${registrationText}</a>` : registrationText}</p>` : "";
+  const safeText=value=>e(value).replaceAll('{','&#123;').replaceAll('}','&#125;');
+  const icpNumber=site.footer?.icpNumber??'',policeNumber=site.footer?.policeNumber??'';
+  const policeCode=policeNumber.match(/\d{14}/)?.[0];
+  const footerFiling=[icpNumber?`<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">${safeText(icpNumber)}</a>`:'',policeNumber?`<a class="police-filing" href="https://beian.mps.gov.cn/${policeCode?'#/query/webSearch?code='+policeCode:''}" target="_blank" rel="noopener noreferrer"><img src="{{root}}assets/filing-police.png" width="18" height="18" alt="公安备案">${safeText(policeNumber)}</a>`:''].filter(Boolean).join('');
+  const endnote=site.footer?.endnote??defaultFooter().endnote;
+  await write('display.css',galleryCSS(gallery));
   await write("data/home-background.json", JSON.stringify({ ...(site.homeBackground ?? { videos: [{ src: "assets/home/home-background.mp4", playbackRate: 1 }], finalFrame: null }), shadeOpacity: site.homeBackground?.shadeOpacity ?? 80, shadeColor: site.homeBackground?.shadeColor ?? '#000000', loop: site.homeBackground?.loop !== false }, null, 2));
   const categories = [
     ...new Set([
@@ -104,6 +113,9 @@ try {
       owner: e(site.owner),
       footerCopyright,
       footerRegistration,
+      footerFiling:footerFiling?`<div class="footer-filing">${footerFiling.replaceAll('{{root}}',prefix)}</div>`:'',
+      endnote:endnote?`<p class="endnote">${safeText(endnote)}</p>`:'',
+      galleryConfig:e(JSON.stringify(gallery)),
       bilibiliName: e(site.contact.bilibiliName),
       emailPrimary: e(site.contact.emails[0]),
       emailSecondary: e(site.contact.emails[1]),
@@ -191,6 +203,7 @@ try {
   );
   await copyFile(path.join(root, "app.js"), path.join(stage, "app.js"));
   await copyFile(path.join(root, "gallery.js"), path.join(stage, "gallery.js"));
+  await copyFile(path.join(root, 'display-settings.js'),path.join(stage,'display-settings.js'));
   await copyFile(path.join(root, "origami-hero.js"), path.join(stage, "origami-hero.js"));
   await copyFile(path.join(root, "origami-hero.css"), path.join(stage, "origami-hero.css"));
   await copyFile(path.join(root, "home-image.css"), path.join(stage, "home-image.css"));
@@ -201,6 +214,7 @@ try {
     path.join(root, "assets/favicon.svg"),
     path.join(stage, "assets/favicon.svg"),
   );
+  await copyFile(path.join(root,'assets/filing-police.png'),path.join(stage,'assets/filing-police.png'));
   // Ship the pinned npm runtime locally; no CDN is required by deployed pages.
   const vendor = path.join(stage, "assets/vendor");
   const gsapDirectory=path.dirname(createRequire(import.meta.url).resolve('gsap/package.json'));

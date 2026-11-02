@@ -35,8 +35,14 @@ window.PortfolioSitePreview=(()=>{
   }
   function resize(){
     const canvas=get('.site-preview-canvas'),frame=get('.site-preview-frame'),screen=get('.site-preview-screen');if(!canvas||!frame)return;
-    const width=Math.max(200,canvas.clientWidth||390);
-    if(mode==='desktop'){const scale=Math.min(1,width/1280);Object.assign(screen.style,{width:1280*scale+'px',height:800*scale+'px'});Object.assign(frame.style,{width:'1280px',height:'800px',transform:`scale(${scale})`});}
+    const style=getComputedStyle(canvas),paddingX=(parseFloat(style.paddingLeft)||0)+(parseFloat(style.paddingRight)||0),paddingY=(parseFloat(style.paddingTop)||0)+(parseFloat(style.paddingBottom)||0);
+    const width=Math.max(200,canvas.clientWidth?canvas.clientWidth-paddingX-2:390);
+    if(mode==='desktop'){
+      const scale=Math.min(1,width/1280),height=canvas.clientHeight?Math.max(200,canvas.clientHeight-paddingY-2):800*scale;
+      // Fill the sidebar vertically so the whole visible area can scroll the page.
+      Object.assign(screen.style,{width:1280*scale+2+'px',height:height+2+'px'});
+      Object.assign(frame.style,{width:'1280px',height:Math.ceil(height/scale)+'px',transform:`scale(${scale})`});
+    }
     else{Object.assign(screen.style,{width:Math.min(390,width)+'px',height:'100%'});Object.assign(frame.style,{width:'100%',height:'100%',transform:'none'});}
     document.querySelectorAll('[data-site-preview="mobile"],[data-site-preview="desktop"]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.sitePreview===mode)));
   }
